@@ -20,31 +20,21 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
     onFiltersChange({ ...filters, [key]: value });
   };
 
-  const activeCount = Object.values(filters).filter(Boolean).length;
+  const activeCount = Object.entries(filters).filter(([k, v]) => k !== "showArchived" && v).length
+    + (filters.showArchived ? 1 : 0)
+    + (filters.hideWiedervorlage ? 1 : 0);
 
   return (
     <div className="space-y-2">
       <div className="flex gap-2 items-center">
-        {/* Sort */}
-        <select
-          value={sortBy}
-          onChange={(e) => onSortChange(e.target.value)}
-          className="flex-1 px-3 py-2 rounded-xl bg-white/70 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
-        >
-          {SORT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
+        <select value={sortBy} onChange={(e) => onSortChange(e.target.value)}
+          className="flex-1 px-3 py-2 rounded-xl bg-white/70 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50">
+          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-
-        {/* Filter toggle */}
-        <button
-          onClick={() => setShowFilters(!showFilters)}
+        <button onClick={() => setShowFilters(!showFilters)}
           className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
-            showFilters || activeCount > 0
-              ? "bg-blue-500 text-white shadow-md"
-              : "bg-white/70 border border-slate-200 text-slate-600 hover:bg-white"
-          }`}
-        >
+            showFilters || activeCount > 0 ? "bg-blue-500 text-white shadow-md" : "bg-white/70 border border-slate-200 text-slate-600 hover:bg-white"
+          }`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
           </svg>
@@ -53,16 +43,14 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
       </div>
 
       {showFilters && (
-        <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-2.5">
+        <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-3">
           {/* Status */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 block">Status</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</label>
             <div className="flex flex-wrap gap-1.5">
               {["", "offen", "in Arbeit", "wartend", "erledigt"].map((s) => (
                 <button key={s} onClick={() => updateFilter("status", s)}
-                  className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all ${
-                    filters.status === s ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}>
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${filters.status === s ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"}`}>
                   {s || "Alle"}
                 </button>
               ))}
@@ -71,14 +59,14 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
 
           {/* Prio */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 block">Priorität</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität</label>
             <div className="flex gap-1.5">
               {["", "A", "B", "C"].map((p) => (
                 <button key={p} onClick={() => updateFilter("prio", p)}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     filters.prio === p
                       ? p === "A" ? "bg-red-500 text-white" : p === "B" ? "bg-orange-400 text-white" : p === "C" ? "bg-emerald-500 text-white" : "bg-blue-500 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      : "bg-slate-100 text-slate-600"
                   }`}>
                   {p || "Alle"}
                 </button>
@@ -89,15 +77,13 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
           {/* Category */}
           {categories.length > 0 && (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 block">Kategorie</label>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Kategorie</label>
               <div className="flex flex-wrap gap-1.5">
                 <button onClick={() => updateFilter("category", "")}
-                  className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all ${!filters.category ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"}`}>
-                  Alle
-                </button>
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${!filters.category ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"}`}>Alle</button>
                 {categories.map((c) => (
                   <button key={c.id} onClick={() => updateFilter("category", c.name)}
-                    className={`px-2.5 py-1 rounded-xl text-xs font-medium transition-all ${filters.category === c.name ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"}`}>
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${filters.category === c.name ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"}`}>
                     {c.name}
                   </button>
                 ))}
@@ -105,11 +91,29 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
             </div>
           )}
 
-          {/* Archiv */}
+          {/* Wiedervorlage */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Wiedervorlage</label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { key: "", label: "Alle" },
+                { key: "hide_future", label: "Zukünftige ausblenden" },
+                { key: "only_today", label: "Nur heute fällig" },
+                { key: "only_past", label: "Nur vergangene" },
+              ].map((o) => (
+                <button key={o.key} onClick={() => updateFilter("wiedervorlageFilter", o.key)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${(filters.wiedervorlageFilter || "") === o.key ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-600"}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Archiv toggle */}
           <div className="flex items-center gap-2 pt-1">
             <button onClick={() => updateFilter("showArchived", !filters.showArchived)}
               className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${filters.showArchived ? "bg-blue-500 border-blue-500" : "border-slate-300"}`}>
-              {filters.showArchived && <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="2.5"><polyline points="2,6 5,9 10,3" /></svg>}
+              {filters.showArchived && <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="white" strokeWidth="2.5"><polyline points="2,6 5,9 10,3"/></svg>}
             </button>
             <span className="text-xs text-slate-600">Archivierte anzeigen</span>
           </div>

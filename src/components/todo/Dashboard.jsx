@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
-import { subscribeTodos, subscribeCategories } from "@/lib/todoService";
+import { subscribeTodos, subscribeCategories, subscribeInbox } from "@/lib/todoService";
 import QuickAdd from "./QuickAdd";
 import TodoCard from "./TodoCard";
 import TodoDetail from "./TodoDetail";
@@ -8,58 +8,74 @@ import FilterBar from "./FilterBar";
 import OverviewPanel from "./OverviewPanel";
 import AdminPanel from "./AdminPanel";
 import SettingsPanel from "./SettingsPanel";
-
-const TABS = ["Aufgaben", "Übersicht", "Admin", "Einstellungen"];
-const TAB_ICONS = ["✓", "◎", "⚙", "👤"];
+import InboxPanel from "./InboxPanel";
+import ExportPanel from "./ExportPanel";
+import AICreateTodo from "./AICreateTodo";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
+const LS_FILTERS = "todo_filters";
 
 function sortTodos(todos, sortBy) {
   const [field, dir] = sortBy.split("_");
   const asc = dir === "asc";
-
   return [...todos].sort((a, b) => {
     let va, vb;
     if (field === "title") { va = (a.title || "").toLowerCase(); vb = (b.title || "").toLowerCase(); }
     else if (field === "prio") { const order = { A: 0, B: 1, C: 2 }; va = order[a.prio] ?? 1; vb = order[b.prio] ?? 1; }
     else if (field === "status") { va = a.status || ""; vb = b.status || ""; }
-    else if (field === "deadline" || field === "wiedervorlage" || field === "createdAt" || field === "updatedAt") {
+    else {
       const toMs = (v) => v ? (v.toDate ? v.toDate().getTime() : new Date(v).getTime()) : (asc ? Infinity : -Infinity);
       va = toMs(a[field]); vb = toMs(b[field]);
-    } else { va = a[field]; vb = b[field]; }
-
+    }
     if (va < vb) return asc ? -1 : 1;
     if (va > vb) return asc ? 1 : -1;
     return 0;
   });
 }
 
+function applyWiedervorlageFilter(todos, wFilter) {
+  if (!wFilter) return todos;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+  return todos.filter((t) => {
+    if (!t.wiedervorlage) return true; // no wiedervorlage → always show
+    const d = t.wiedervorlage.toDate ? t.wiedervorlage.toDate() : new Date(t.wiedervorlage);
+    if (wFilter === "hide_future") return d <= tomorrow;
+    if (wFilter === "only_today") { const dd = new Date(d); dd.setHours(0,0,0,0); return dd.getTime() === now.getTime(); }
+    if (wFilter === "only_past") return d < now;
+    return true;
+  });
+}
+
+const defaultFilters = { status: "", prio: "", category: "", showArchived: false, wiedervorlageFilter: "" };
+
 export default function Dashboard() {
   const { user, userProfile, isAdmin } = useFirebaseAuth();
   const [todos, setTodos] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [inboxCount, setInboxCount] = useState(0);
   const [activeTab, setActiveTab] = useState(0);
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [view, setView] = useState(() => localStorage.getItem(LS_VIEW) || "list");
   const [sortBy, setSortBy] = useState(() => localStorage.getItem(LS_SORT) || "createdAt_desc");
-  const [filters, setFilters] = useState({ status: "", prio: "", category: "", showArchived: false });
+  const [filters, setFilters] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || defaultFilters; } catch { return defaultFilters; }
+  });
   const [search, setSearch] = useState("");
+  const [showAI, setShowAI] = useState(false);
 
   useEffect(() => {
     const unsub1 = subscribeTodos(user.uid, setTodos);
     const unsub2 = subscribeCategories(user.uid, setCategories);
-    return () => { unsub1(); unsub2(); };
+    const unsub3 = subscribeInbox(user.uid, (items) => setInboxCount(items.length));
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [user.uid]);
 
-  const handleSortChange = (v) => {
-    setSortBy(v);
-    localStorage.setItem(LS_SORT, v);
-  };
-  const handleViewChange = (v) => {
-    setView(v);
-    localStorage.setItem(LS_VIEW, v);
-  };
+  const handleSortChange = (v) => { setSortBy(v); localStorage.setItem(LS_SORT, v); };
+  const handleViewChange = (v) => { setView(v); localStorage.setItem(LS_VIEW, v); };
+  const handleFiltersChange = (f) => { setFilters(f); localStorage.setItem(LS_FILTERS, JSON.stringify(f)); };
 
   const filtered = useMemo(() => {
     let result = todos;
@@ -68,18 +84,44 @@ export default function Dashboard() {
     if (filters.status) result = result.filter((t) => t.status === filters.status);
     if (filters.prio) result = result.filter((t) => t.prio === filters.prio);
     if (filters.category) result = result.filter((t) => t.category === filters.category);
-    if (search.trim()) result = result.filter((t) => t.title?.toLowerCase().includes(search.toLowerCase()) || t.description?.toLowerCase().includes(search.toLowerCase()));
+    result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
+    if (search.trim()) result = result.filter((t) =>
+      t.title?.toLowerCase().includes(search.toLowerCase()) ||
+      (t.description || "").replace(/<[^>]+>/g,"").toLowerCase().includes(search.toLowerCase()));
     return sortTodos(result, sortBy);
   }, [todos, filters, sortBy, search]);
 
+  // Handle newly created todo: open it immediately
+  const handleQuickCreated = (newTodo) => {
+    setSelectedTodo(newTodo);
+  };
+
+  const aiEnabled = userProfile?.aiEnabled;
+
+  // Tabs: 0=Aufgaben, 1=Übersicht, 2=Inbox, 3=Export, 4=Admin(if admin), 5=Settings
+  const tabs = [
+    { label: "Aufgaben", icon: "✓" },
+    { label: "Übersicht", icon: "◎" },
+    { label: "Inbox", icon: "📬", badge: inboxCount },
+    { label: "Export", icon: "⬆" },
+    ...(isAdmin ? [{ label: "Admin", icon: "⚙" }] : []),
+    { label: "Einstell.", icon: "👤" },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100" style={{ touchAction: "pan-y" }}>
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-white/60 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-md">✓</div>
           <h1 className="text-lg font-bold text-slate-800 tracking-tight flex-1">2Do</h1>
           <div className="flex items-center gap-1.5">
+            {aiEnabled && (
+              <button onClick={() => setShowAI(true)}
+                className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-sm shadow-md">
+                ✦
+              </button>
+            )}
             <button onClick={() => handleViewChange(view === "list" ? "grid" : "list")}
               className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-all text-sm">
               {view === "list" ? "⊞" : "☰"}
@@ -93,17 +135,20 @@ export default function Dashboard() {
 
       <div className="max-w-2xl mx-auto px-4 pb-28">
         {/* Tab Nav */}
-        <div className="flex gap-1 mt-4 bg-white/50 backdrop-blur-xl rounded-2xl p-1 border border-white/60">
-          {TABS.map((tab, i) => (
-            (i === 2 && !isAdmin) ? null : (
-              <button key={tab} onClick={() => setActiveTab(i)}
-                className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  activeTab === i ? "bg-white shadow-md text-blue-600" : "text-slate-500 hover:text-slate-700"
-                }`}>
-                <span className="hidden sm:inline">{tab}</span>
-                <span className="sm:hidden">{TAB_ICONS[i]}</span>
-              </button>
-            )
+        <div className="flex gap-1 mt-4 bg-white/50 backdrop-blur-xl rounded-2xl p-1 border border-white/60 overflow-x-auto no-scrollbar">
+          {tabs.map((tab, i) => (
+            <button key={tab.label} onClick={() => setActiveTab(i)}
+              className={`flex-shrink-0 flex-1 py-2 px-1 rounded-xl text-xs font-semibold transition-all relative min-w-[52px] ${
+                activeTab === i ? "bg-white shadow-md text-blue-600" : "text-slate-500 hover:text-slate-700"
+              }`}>
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.icon}</span>
+              {tab.badge > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
           ))}
         </div>
 
@@ -111,31 +156,23 @@ export default function Dashboard() {
         <div className="mt-4 space-y-4">
           {activeTab === 0 && (
             <>
-              {/* Quick Add */}
               <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-3 shadow-sm">
-                <QuickAdd categories={categories} />
+                <QuickAdd categories={categories} onCreated={handleQuickCreated} aiEnabled={aiEnabled} />
               </div>
-
-              {/* Search */}
               <div className="relative">
                 <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="Suchen..."
-                  className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white/70 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[15px]" />
+                  className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white/70 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[16px]" />
               </div>
-
-              {/* Filter */}
-              <FilterBar filters={filters} onFiltersChange={setFilters} categories={categories} sortBy={sortBy} onSortChange={handleSortChange} />
-
-              {/* Todo List */}
+              <FilterBar filters={filters} onFiltersChange={handleFiltersChange} categories={categories} sortBy={sortBy} onSortChange={handleSortChange} />
               <div className={view === "grid" ? "grid grid-cols-2 gap-2.5" : "space-y-2"}>
                 {filtered.length === 0 ? (
                   <div className="col-span-2 text-center py-12">
                     <div className="text-4xl mb-3">📋</div>
                     <p className="text-slate-400 text-sm">Keine Aufgaben gefunden</p>
-                    <p className="text-slate-300 text-xs mt-1">Erstelle eine neue Aufgabe oben</p>
                   </div>
                 ) : (
                   filtered.map((todo) => (
@@ -147,8 +184,10 @@ export default function Dashboard() {
           )}
 
           {activeTab === 1 && <OverviewPanel todos={todos} />}
-          {activeTab === 2 && isAdmin && <AdminPanel />}
-          {activeTab === 3 && <SettingsPanel categories={categories} />}
+          {activeTab === 2 && <InboxPanel />}
+          {activeTab === 3 && <ExportPanel todos={todos} categories={categories} />}
+          {activeTab === 4 && isAdmin && <AdminPanel />}
+          {activeTab === (isAdmin ? 5 : 4) && <SettingsPanel categories={categories} />}
         </div>
       </div>
 
@@ -159,6 +198,15 @@ export default function Dashboard() {
           categories={categories}
           onClose={() => setSelectedTodo(null)}
           onDelete={() => setSelectedTodo(null)}
+        />
+      )}
+
+      {/* AI Create Modal */}
+      {showAI && (
+        <AICreateTodo
+          categories={categories}
+          onCreated={() => {}}
+          onClose={() => setShowAI(false)}
         />
       )}
     </div>

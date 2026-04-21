@@ -52,3 +52,78 @@ export const subscribeCategories = (uid, callback) => {
     callback(cats);
   });
 };
+
+// --- SHARED TODOS (collaboration) ---
+export const sharedTodosCol = () => collection(db, "sharedTodos");
+export const inboxCol = (uid) => collection(db, "users", uid, "inbox");
+
+export const sendTodoToUsers = async (senderUid, senderName, todo, targetUids, collaborate) => {
+  // Create a shared document
+  const sharedRef = await addDoc(sharedTodosCol(), {
+    ...todo,
+    id: undefined,
+    sharedBy: senderUid,
+    sharedByName: senderName,
+    collaborators: collaborate ? [senderUid, ...targetUids] : [],
+    isCollaborative: !!collaborate,
+    originalId: todo.id,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // Send inbox notification to each target
+  for (const uid of targetUids) {
+    await addDoc(inboxCol(uid), {
+      sharedTodoId: sharedRef.id,
+      fromUid: senderUid,
+      fromName: senderName,
+      todoTitle: todo.title,
+      isCollaborative: !!collaborate,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  }
+  return sharedRef.id;
+};
+
+export const subscribeInbox = (uid, callback) => {
+  const q = query(inboxCol(uid), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+};
+
+export const acceptSharedTodo = async (uid, inboxItem, sharedTodo) => {
+  // Copy as own todo
+  await addDoc(collection(db, "users", uid, "todos"), {
+    title: sharedTodo.title,
+    description: sharedTodo.description || "",
+    prio: sharedTodo.prio || "B",
+    status: "offen",
+    category: sharedTodo.category || "",
+    deadline: sharedTodo.deadline || null,
+    wiedervorlage: sharedTodo.wiedervorlage || null,
+    emailTitle: sharedTodo.emailTitle || "",
+    emailBody: sharedTodo.emailBody || "",
+    archived: false,
+    sharedFromId: inboxItem.sharedTodoId,
+    userId: uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await deleteDoc(doc(db, "users", uid, "inbox", inboxItem.id));
+};
+
+export const dismissInboxItem = (uid, inboxItemId) =>
+  deleteDoc(doc(db, "users", uid, "inbox", inboxItemId));
+
+export const getSharedTodo = async (sharedTodoId) => {
+  const { getDoc } = await import("firebase/firestore");
+  const snap = await getDoc(doc(db, "sharedTodos", sharedTodoId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+};
+
+export const getAllUsers = async () => {
+  const snap = await getDocs(collection(db, "users"));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+};
