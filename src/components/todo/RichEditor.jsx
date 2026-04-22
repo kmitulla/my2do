@@ -113,8 +113,12 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
         <ToolBtn onClick={() => exec("strikeThrough")} title="Durchgestrichen"><s>S</s></ToolBtn>
         <Sep />
         {/* Lists */}
-        <ToolBtn onClick={() => exec("insertUnorderedList")} title="Liste">• —</ToolBtn>
-        <ToolBtn onClick={() => exec("insertOrderedList")} title="Numm.">1.</ToolBtn>
+        <ToolBtn onClick={() => exec("insertUnorderedList")} title="Aufzählungsliste">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("insertOrderedList")} title="Nummerierte Liste">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="1" y="8" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">1.</text><text x="1" y="14" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">2.</text><text x="1" y="20" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">3.</text></svg>
+        </ToolBtn>
         <Sep />
         {/* Color */}
         <div className="flex items-center gap-0.5">

@@ -167,15 +167,22 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   const handleShare = async () => {
     if (selectedUids.length === 0) return;
     setSharing(true);
-    await sendTodoToUsers(user.uid, userProfile?.displayName || user.email, form, selectedUids, collaborate);
-    setSharing(false);
-    setShareSuccess(true);
-    setTimeout(() => { setShareSuccess(false); setShowShare(false); setSelectedUids([]); }, 1500);
+    try {
+      await sendTodoToUsers(user.uid, userProfile?.displayName || user.email, form, selectedUids, collaborate);
+      setShareSuccess(true);
+      setTimeout(() => { setShareSuccess(false); setShowShare(false); setSelectedUids([]); }, 1500);
+    } catch (err) {
+      console.error("Share failed:", err);
+      alert("Fehler beim Senden: " + err.message);
+    } finally {
+      setSharing(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
       onClick={handleBackdropClick}
+
 >
       <div className="w-full sm:max-w-lg bg-white/85 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 max-h-[95vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}>
@@ -274,24 +281,20 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
               className="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
           </div>
 
-          {/* Email Section */}
+          {/* Email + Calendar - compact side by side */}
           <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">✉️ E-Mail aus Notiz erstellen</label>
-            <button onClick={openEmailClient}
-              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all">
-              📨 E-Mail öffnen
-            </button>
-            <p className="text-[10px] text-slate-400 mt-1 text-center">Titel als Betreff · Beschreibung + Infos als Inhalt</p>
-          </div>
-
-          {/* Calendar Button */}
-          <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">📆 Termin erstellen</label>
-            <button onClick={openCalendar}
-              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold shadow-md hover:shadow-lg transition-all">
-              📆 Kalendereintrag (.ics) herunterladen
-            </button>
-            <p className="text-[10px] text-slate-400 mt-1 text-center">Öffnet Outlook am PC · Standard-Kalender am iPhone</p>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">📨 E-Mail &amp; 📆 Kalender</label>
+            <div className="flex gap-2">
+              <button onClick={openEmailClient}
+                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all">
+                📨 E-Mail
+              </button>
+              <button onClick={openCalendar}
+                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold hover:shadow-lg transition-all">
+                📆 Kalender
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender</p>
           </div>
 
           {/* Share Section */}

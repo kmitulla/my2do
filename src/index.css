@@ -38,7 +38,7 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
     -webkit-font-smoothing: antialiased;
-    overscroll-behavior: none;
+    overscroll-behavior-x: none;
     overflow-x: hidden;
   }
 

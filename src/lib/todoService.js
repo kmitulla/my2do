@@ -58,10 +58,16 @@ export const sharedTodosCol = () => collection(db, "sharedTodos");
 export const inboxCol = (uid) => collection(db, "users", uid, "inbox");
 
 export const sendTodoToUsers = async (senderUid, senderName, todo, targetUids, collaborate) => {
-  // Create a shared document
+  // Sanitize: convert Timestamp objects to plain dates so Firestore doesn't reject them
+  const toDate = (v) => v ? (v.toDate ? v.toDate() : new Date(v)) : null;
   const sharedRef = await addDoc(sharedTodosCol(), {
-    ...todo,
-    id: undefined,
+    title: todo.title || "",
+    description: todo.description || "",
+    prio: todo.prio || "B",
+    status: todo.status || "offen",
+    category: todo.category || "",
+    deadline: toDate(todo.deadline),
+    wiedervorlage: toDate(todo.wiedervorlage),
     sharedBy: senderUid,
     sharedByName: senderName,
     collaborators: collaborate ? [senderUid, ...targetUids] : [],

@@ -49,7 +49,7 @@ function applyWiedervorlageFilter(todos, wFilter) {
   });
 }
 
-const defaultFilters = { statuses: [], prios: [], category: "", showArchived: false, wiedervorlageFilter: "" };
+const defaultFilters = { statuses: [], prios: [], categories: [], showArchived: false, wiedervorlageFilter: "" };
 
 export default function Dashboard() {
   const { user, userProfile, isAdmin } = useFirebaseAuth();
@@ -83,7 +83,7 @@ export default function Dashboard() {
     else result = result.filter((t) => t.archived);
     if (filters.statuses?.length) result = result.filter((t) => filters.statuses.includes(t.status));
     if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
-    if (filters.category) result = result.filter((t) => t.category === filters.category);
+    if (filters.categories?.length) result = result.filter((t) => filters.categories.includes(t.category));
     result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     if (search.trim()) result = result.filter((t) =>
       t.title?.toLowerCase().includes(search.toLowerCase()) ||
@@ -109,7 +109,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100" style={{ overflowY: "auto" }}>
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-white/60 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
