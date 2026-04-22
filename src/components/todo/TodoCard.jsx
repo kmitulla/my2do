@@ -58,7 +58,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
                 {todo.title}
               </p>
               {todo.description && (
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">{todo.description}</p>
+                <p className="text-xs text-slate-400 mt-1 line-clamp-2">{todo.description.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim()}</p>
               )}
               <div className="flex flex-wrap gap-1 mt-2">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>

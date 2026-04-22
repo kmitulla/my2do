@@ -13,16 +13,31 @@ const SORT_OPTIONS = [
   { value: "status_asc", label: "Status" },
 ];
 
+const PRIO_BTN = {
+  A: { active: "bg-red-500 text-white", base: "bg-slate-100 text-slate-600" },
+  B: { active: "bg-orange-400 text-white", base: "bg-slate-100 text-slate-600" },
+  C: { active: "bg-emerald-500 text-white", base: "bg-slate-100 text-slate-600" },
+};
+
 export default function FilterBar({ filters, onFiltersChange, categories, sortBy, onSortChange }) {
   const [showFilters, setShowFilters] = useState(false);
+
+  const toggleMulti = (key, value) => {
+    const current = filters[key] || [];
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    onFiltersChange({ ...filters, [key]: next });
+  };
 
   const updateFilter = (key, value) => {
     onFiltersChange({ ...filters, [key]: value });
   };
 
-  const activeCount = Object.entries(filters).filter(([k, v]) => k !== "showArchived" && v).length
-    + (filters.showArchived ? 1 : 0)
-    + (filters.hideWiedervorlage ? 1 : 0);
+  const activeCount =
+    (filters.statuses?.length || 0) +
+    (filters.prios?.length || 0) +
+    (filters.category ? 1 : 0) +
+    (filters.showArchived ? 1 : 0) +
+    (filters.wiedervorlageFilter ? 1 : 0);
 
   return (
     <div className="space-y-2">
@@ -44,33 +59,42 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
 
       {showFilters && (
         <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-3">
-          {/* Status */}
+
+          {/* Status – multi-select */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
             <div className="flex flex-wrap gap-1.5">
-              {["", "offen", "in Arbeit", "wartend", "erledigt"].map((s) => (
-                <button key={s} onClick={() => updateFilter("status", s)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${filters.status === s ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600"}`}>
-                  {s || "Alle"}
-                </button>
-              ))}
+              {["offen", "in Arbeit", "wartend", "erledigt"].map((s) => {
+                const active = filters.statuses?.includes(s);
+                return (
+                  <button key={s} onClick={() => toggleMulti("statuses", s)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${active ? "bg-blue-500 text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}>
+                    {s}
+                  </button>
+                );
+              })}
+              {(filters.statuses?.length > 0) && (
+                <button onClick={() => updateFilter("statuses", [])} className="px-2.5 py-1.5 rounded-xl text-xs text-slate-400 bg-slate-50 border border-slate-200">✕ Reset</button>
+              )}
             </div>
           </div>
 
-          {/* Prio */}
+          {/* Prio – multi-select */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
             <div className="flex gap-1.5">
-              {["", "A", "B", "C"].map((p) => (
-                <button key={p} onClick={() => updateFilter("prio", p)}
-                  className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    filters.prio === p
-                      ? p === "A" ? "bg-red-500 text-white" : p === "B" ? "bg-orange-400 text-white" : p === "C" ? "bg-emerald-500 text-white" : "bg-blue-500 text-white"
-                      : "bg-slate-100 text-slate-600"
-                  }`}>
-                  {p || "Alle"}
-                </button>
-              ))}
+              {["A", "B", "C"].map((p) => {
+                const active = filters.prios?.includes(p);
+                return (
+                  <button key={p} onClick={() => toggleMulti("prios", p)}
+                    className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${active ? PRIO_BTN[p].active + " shadow-sm" : PRIO_BTN[p].base}`}>
+                    {p}
+                  </button>
+                );
+              })}
+              {(filters.prios?.length > 0) && (
+                <button onClick={() => updateFilter("prios", [])} className="px-2.5 py-1.5 rounded-xl text-xs text-slate-400 bg-slate-50 border border-slate-200">✕</button>
+              )}
             </div>
           </div>
 

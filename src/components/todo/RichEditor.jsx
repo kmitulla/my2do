@@ -27,8 +27,73 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
   }, [onChange]);
 
   const insertTable = () => {
-    const table = `<table style="border-collapse:collapse;width:100%;margin:8px 0"><tr><td style="border:1px solid #cbd5e1;padding:4px 8px">Spalte 1</td><td style="border:1px solid #cbd5e1;padding:4px 8px">Spalte 2</td><td style="border:1px solid #cbd5e1;padding:4px 8px">Spalte 3</td></tr><tr><td style="border:1px solid #cbd5e1;padding:4px 8px">&nbsp;</td><td style="border:1px solid #cbd5e1;padding:4px 8px">&nbsp;</td><td style="border:1px solid #cbd5e1;padding:4px 8px">&nbsp;</td></tr></table><br/>`;
+    const cols = parseInt(prompt("Anzahl Spalten:", "3") || "3", 10);
+    const rows = parseInt(prompt("Anzahl Zeilen:", "3") || "3", 10);
+    if (!cols || !rows) return;
+    const tdStyle = `border:1px solid #cbd5e1;padding:4px 8px;min-width:60px`;
+    const header = `<tr>${Array.from({length: cols}, (_, i) => `<td style="${tdStyle}">Spalte ${i+1}</td>`).join("")}</tr>`;
+    const body = Array.from({length: rows - 1}, () => `<tr>${Array.from({length: cols}, () => `<td style="${tdStyle}">&nbsp;</td>`).join("")}</tr>`).join("");
+    const table = `<table style="border-collapse:collapse;width:100%;margin:8px 0">${header}${body}</table><br/>`;
     document.execCommand("insertHTML", false, table);
+    handleInput();
+  };
+
+  const addTableRow = () => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    while (node && node.nodeName !== "TR") node = node.parentNode;
+    if (!node) return;
+    const cols = node.querySelectorAll("td").length || 1;
+    const tdStyle = `border:1px solid #cbd5e1;padding:4px 8px;min-width:60px`;
+    const newRow = node.cloneNode(false);
+    newRow.innerHTML = Array.from({length: cols}, () => `<td style="${tdStyle}">&nbsp;</td>`).join("");
+    node.parentNode.insertBefore(newRow, node.nextSibling);
+    handleInput();
+  };
+
+  const addTableCol = () => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    while (node && node.nodeName !== "TD") node = node.parentNode;
+    if (!node) return;
+    const table = node.closest("table");
+    if (!table) return;
+    const colIdx = Array.from(node.parentNode.children).indexOf(node);
+    const tdStyle = `border:1px solid #cbd5e1;padding:4px 8px;min-width:60px`;
+    table.querySelectorAll("tr").forEach((row) => {
+      const newTd = document.createElement("td");
+      newTd.style.cssText = tdStyle;
+      newTd.innerHTML = "&nbsp;";
+      const ref = row.children[colIdx + 1] || null;
+      row.insertBefore(newTd, ref);
+    });
+    handleInput();
+  };
+
+  const removeTableRow = () => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    while (node && node.nodeName !== "TR") node = node.parentNode;
+    if (!node) return;
+    node.remove();
+    handleInput();
+  };
+
+  const removeTableCol = () => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount) return;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    while (node && node.nodeName !== "TD") node = node.parentNode;
+    if (!node) return;
+    const table = node.closest("table");
+    if (!table) return;
+    const colIdx = Array.from(node.parentNode.children).indexOf(node);
+    table.querySelectorAll("tr").forEach((row) => {
+      if (row.children[colIdx]) row.children[colIdx].remove();
+    });
     handleInput();
   };
 
@@ -88,7 +153,11 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
         </select>
         <Sep />
         {/* Table & Link */}
-        <ToolBtn onClick={insertTable} title="Tabelle">⊞</ToolBtn>
+        <ToolBtn onClick={insertTable} title="Neue Tabelle">⊞</ToolBtn>
+        <ToolBtn onClick={addTableRow} title="Zeile hinzufügen (Cursor in Zeile)">+Z</ToolBtn>
+        <ToolBtn onClick={addTableCol} title="Spalte hinzufügen (Cursor in Zelle)">+S</ToolBtn>
+        <ToolBtn onClick={removeTableRow} title="Zeile löschen (Cursor in Zeile)">-Z</ToolBtn>
+        <ToolBtn onClick={removeTableCol} title="Spalte löschen (Cursor in Zelle)">-S</ToolBtn>
         <ToolBtn onClick={insertLink} title="Link">🔗</ToolBtn>
       </div>
 

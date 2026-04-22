@@ -49,7 +49,7 @@ function applyWiedervorlageFilter(todos, wFilter) {
   });
 }
 
-const defaultFilters = { status: "", prio: "", category: "", showArchived: false, wiedervorlageFilter: "" };
+const defaultFilters = { statuses: [], prios: [], category: "", showArchived: false, wiedervorlageFilter: "" };
 
 export default function Dashboard() {
   const { user, userProfile, isAdmin } = useFirebaseAuth();
@@ -81,8 +81,8 @@ export default function Dashboard() {
     let result = todos;
     if (!filters.showArchived) result = result.filter((t) => !t.archived);
     else result = result.filter((t) => t.archived);
-    if (filters.status) result = result.filter((t) => t.status === filters.status);
-    if (filters.prio) result = result.filter((t) => t.prio === filters.prio);
+    if (filters.statuses?.length) result = result.filter((t) => filters.statuses.includes(t.status));
+    if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
     if (filters.category) result = result.filter((t) => t.category === filters.category);
     result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     if (search.trim()) result = result.filter((t) =>
@@ -109,7 +109,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100" style={{ touchAction: "pan-y" }}>
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-white/60 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">

@@ -106,22 +106,51 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   };
 
   const openCalendar = () => {
-    const title = encodeURIComponent(form.title || "Aufgabe");
-    const deadlineDate = form.deadline ? (form.deadline.toDate ? form.deadline.toDate() : new Date(form.deadline)) : new Date();
+    const title = form.title || "Aufgabe";
+    const deadlineDate = form.deadline
+      ? (form.deadline.toDate ? form.deadline.toDate() : new Date(form.deadline))
+      : new Date();
     const endDate = new Date(deadlineDate.getTime() + 60 * 60 * 1000);
     const pad = (n) => String(n).padStart(2, "0");
-    const fmtGcal = (d) => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
-    const cleanDesc = (form.description || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ");
-    const details = encodeURIComponent(
-      `Priorität: ${form.prio || "B"}\nStatus: ${form.status || "offen"}\nKategorie: ${form.category || "–"}\nDeadline: ${form.deadline ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}\nWiedervorlage: ${form.wiedervorlage ? format(form.wiedervorlage.toDate ? form.wiedervorlage.toDate() : new Date(form.wiedervorlage), "dd.MM.yyyy HH:mm") : "–"}\n\n${cleanDesc}`
-    );
-    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${fmtGcal(deadlineDate)}/${fmtGcal(endDate)}&details=${details}`;
-    window.open(calUrl, "_blank");
+    const fmtIcs = (d) => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+    const cleanDesc = (form.description || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/\n/g, "\\n");
+    const notes = `Priorität: ${form.prio || "B"}\\nStatus: ${form.status || "offen"}\\nKategorie: ${form.category || "–"}\\nDeadline: ${form.deadline ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}\\n\\n${cleanDesc}`;
+    // Build .ics content – opens in Outlook on PC, default calendar on iPhone
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      `SUMMARY:${title}`,
+      `DTSTART:${fmtIcs(deadlineDate)}`,
+      `DTEND:${fmtIcs(endDate)}`,
+      `DESCRIPTION:${notes}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/\s+/g, "_")}.ics`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const openEmailClient = () => {
-    const subject = encodeURIComponent(form.emailTitle || "");
-    const body = encodeURIComponent(form.emailBody || "");
+    const subject = encodeURIComponent(form.title || "");
+    const cleanDesc = (form.description || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+    const deadlineDate = form.deadline ? (form.deadline.toDate ? form.deadline.toDate() : new Date(form.deadline)) : null;
+    const wiedervorlageDate = form.wiedervorlage ? (form.wiedervorlage.toDate ? form.wiedervorlage.toDate() : new Date(form.wiedervorlage)) : null;
+    const info = [
+      "",
+      "---",
+      `Priorität: ${form.prio || "–"}`,
+      `Status: ${form.status || "–"}`,
+      `Kategorie: ${form.category || "–"}`,
+      `Deadline: ${deadlineDate ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}`,
+      `Wiedervorlage: ${wiedervorlageDate ? format(wiedervorlageDate, "dd.MM.yyyy HH:mm") : "–"}`,
+    ].join("\n");
+    const body = encodeURIComponent(cleanDesc + info);
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
 
@@ -147,7 +176,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
       onClick={handleBackdropClick}
-      style={{ touchAction: "none" }}>
+>
       <div className="w-full sm:max-w-lg bg-white/85 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 max-h-[95vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}>
 
@@ -248,19 +277,11 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
           {/* Email Section */}
           <div className="border-t border-slate-100 pt-4">
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">✉️ E-Mail aus Notiz erstellen</label>
-            <input value={form.emailTitle || ""} onChange={(e) => set("emailTitle", e.target.value)}
-              placeholder="E-Mail Betreff"
-              className="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-slate-200 text-slate-700 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
-            <AutoGrowTextarea
-              value={form.emailBody || ""}
-              onChange={(v) => set("emailBody", v)}
-              placeholder="E-Mail Text..."
-              minRows={4}
-            />
-            <button onClick={openEmailClient} disabled={!form.emailTitle}
-              className="w-full mt-2 py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all disabled:opacity-40">
+            <button onClick={openEmailClient}
+              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all">
               📨 E-Mail öffnen
             </button>
+            <p className="text-[10px] text-slate-400 mt-1 text-center">Titel als Betreff · Beschreibung + Infos als Inhalt</p>
           </div>
 
           {/* Calendar Button */}
@@ -268,9 +289,9 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">📆 Termin erstellen</label>
             <button onClick={openCalendar}
               className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold shadow-md hover:shadow-lg transition-all">
-              📆 In Kalender eintragen & Einladen
+              📆 Kalendereintrag (.ics) herunterladen
             </button>
-            <p className="text-[10px] text-slate-400 mt-1 text-center">Öffnet Google Kalender mit Titel und allen Details vorausgefüllt</p>
+            <p className="text-[10px] text-slate-400 mt-1 text-center">Öffnet Outlook am PC · Standard-Kalender am iPhone</p>
           </div>
 
           {/* Share Section */}
