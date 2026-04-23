@@ -45,6 +45,30 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   const isDirtyRef = useRef(false);
   const closedWithX = useRef(false);
 
+  // Block horizontal scroll on the modal completely
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (!handler._sx) return;
+      const dx = Math.abs(t.clientX - handler._sx);
+      const dy = Math.abs(t.clientY - handler._sy);
+      if (dx > dy && dx > 5) e.preventDefault();
+    };
+    const down = (e) => {
+      if (e.touches.length === 1) {
+        handler._sx = e.touches[0].clientX;
+        handler._sy = e.touches[0].clientY;
+      }
+    };
+    document.addEventListener("touchstart", down, { passive: true });
+    document.addEventListener("touchmove", handler, { passive: false });
+    return () => {
+      document.removeEventListener("touchstart", down);
+      document.removeEventListener("touchmove", handler);
+    };
+  }, []);
+
   useEffect(() => {
     setForm({ ...todo });
     isDirtyRef.current = false;
