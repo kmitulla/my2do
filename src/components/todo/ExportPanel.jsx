@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import { subscribeCategories, addTodo, addCategory } from "@/lib/todoService";
 
 function toDate(ts) {
   if (!ts) return null;
@@ -78,19 +80,159 @@ function exportPDF(todos) {
   win?.addEventListener("load", () => { win.print(); URL.revokeObjectURL(url); });
 }
 
+// ── .my2do format ──────────────────────────────────────────────────────────
+// A JSON backup file containing all todos + categories, versioned and signed
+
+const MY2DO_VERSION = "1.0";
+const MY2DO_MAGIC = "MY2DO";
+
+function serializeTodo(t) {
+  const serialize = (v) => {
+    if (!v) return null;
+    if (v.toDate) return v.toDate().toISOString();
+    if (v instanceof Date) return v.toISOString();
+    return v;
+  };
+  return {
+    title: t.title || "",
+    description: t.description || "",
+    prio: t.prio || "B",
+    status: t.status || "offen",
+    category: t.category || "",
+    deadline: serialize(t.deadline),
+    wiedervorlage: serialize(t.wiedervorlage),
+    archived: !!t.archived,
+    createdAt: serialize(t.createdAt),
+  };
+}
+
+function exportMy2do(todos, categories) {
+  const payload = {
+    magic: MY2DO_MAGIC,
+    version: MY2DO_VERSION,
+    exportedAt: new Date().toISOString(),
+    stats: { todos: todos.length, categories: categories.length },
+    categories: categories.map((c) => ({ name: c.name, color: c.color || "#6366f1" })),
+    todos: todos.map(serializeTodo),
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `backup_${format(new Date(), "yyyy-MM-dd_HH-mm")}.my2do`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ExportPanel({ todos, categories }) {
+  const { user } = useFirebaseAuth();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPrio, setFilterPrio] = useState("");
   const [filterCat, setFilterCat] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const fileRef = useRef(null);
 
   const filtered = filterTodos(todos, from, to, { status: filterStatus, prio: filterPrio, category: filterCat });
 
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (data.magic !== MY2DO_MAGIC) throw new Error("Ungültige .my2do Datei");
+      if (!data.todos || !Array.isArray(data.todos)) throw new Error("Keine Aufgaben gefunden");
+
+      // Import categories first (skip duplicates)
+      const existingCatNames = new Set(categories.map((c) => c.name));
+      let catsImported = 0;
+      for (const cat of (data.categories || [])) {
+        if (!existingCatNames.has(cat.name)) {
+          await addCategory(user.uid, cat.name, cat.color || "#6366f1");
+          catsImported++;
+        }
+      }
+
+      // Import todos
+      let todosImported = 0;
+      for (const t of data.todos) {
+        await addTodo(user.uid, {
+          title: t.title || "",
+          description: t.description || "",
+          prio: t.prio || "B",
+          status: t.status || "offen",
+          category: t.category || "",
+          deadline: t.deadline ? new Date(t.deadline) : null,
+          wiedervorlage: t.wiedervorlage ? new Date(t.wiedervorlage) : null,
+          archived: !!t.archived,
+        });
+        todosImported++;
+      }
+
+      setImportResult({ ok: true, todos: todosImported, cats: catsImported });
+    } catch (err) {
+      setImportResult({ ok: false, error: err.message });
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
   return (
     <div className="space-y-4">
+
+      {/* ── .my2do Backup Section ── */}
+      <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-200/60 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-sm font-bold shadow-md">💾</div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Vollständiges Backup</h3>
+            <p className="text-[11px] text-slate-400">Alle Daten als <span className="font-mono font-semibold text-indigo-600">.my2do</span> Datei sichern &amp; wiederherstellen</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => exportMy2do(todos, categories)}
+            disabled={todos.length === 0}
+            className="py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-semibold shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-[1.02] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            <span>⬆</span> Exportieren
+          </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            className="py-3 px-4 rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-semibold shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 hover:scale-[1.02] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            {importing ? <span className="animate-spin">⟳</span> : <span>⬇</span>}
+            {importing ? "Importiere..." : "Importieren"}
+          </button>
+          <input ref={fileRef} type="file" accept=".my2do" onChange={handleImport} className="hidden" />
+        </div>
+
+        {importResult && (
+          <div className={`rounded-xl px-3 py-2.5 text-sm font-medium flex items-center gap-2 ${importResult.ok ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-red-50 border border-red-200 text-red-600"}`}>
+            {importResult.ok
+              ? `✓ ${importResult.todos} Aufgaben & ${importResult.cats} Kategorien importiert!`
+              : `✕ Fehler: ${importResult.error}`}
+          </div>
+        )}
+
+        <p className="text-[10px] text-slate-400 leading-relaxed">
+          Das <span className="font-mono font-semibold">.my2do</span> Format enthält alle Aufgaben, Kategorien, Beschreibungen und Daten. Beim Import werden keine bestehenden Daten gelöscht.
+        </p>
+      </div>
+
+      {/* ── Export-Filter ── */}
       <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-slate-700">Export-Filter</h3>
+        <h3 className="text-sm font-semibold text-slate-700">CSV / PDF Export-Filter</h3>
 
         <div className="grid grid-cols-2 gap-2">
           <div>

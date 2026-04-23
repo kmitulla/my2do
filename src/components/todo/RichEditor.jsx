@@ -184,6 +184,9 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
         }
         .rich-editor table td { border: 1px solid #cbd5e1; padding: 4px 8px; }
         .rich-editor a { color: #3b82f6; text-decoration: underline; }
+        .rich-editor ul { list-style-type: disc !important; padding-left: 1.5em !important; margin: 4px 0 !important; }
+        .rich-editor ol { list-style-type: decimal !important; padding-left: 1.5em !important; margin: 4px 0 !important; }
+        .rich-editor li { display: list-item !important; }
       `}</style>
     </div>
   );
