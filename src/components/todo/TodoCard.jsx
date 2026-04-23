@@ -31,8 +31,12 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
 
   const toggleDone = async (e) => {
     e.stopPropagation();
-    const newStatus = todo.status === "erledigt" ? "offen" : "erledigt";
-    await updateTodo(user.uid, todo.id, { status: newStatus });
+    if (todo.status === "erledigt") {
+      const prev = todo.previousStatus || "offen";
+      await updateTodo(user.uid, todo.id, { status: prev, previousStatus: null });
+    } else {
+      await updateTodo(user.uid, todo.id, { status: "erledigt", previousStatus: todo.status });
+    }
   };
 
   if (view === "grid") {
@@ -41,7 +45,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
         onClick={() => onClick(todo)}
         className="relative bg-white/65 backdrop-blur-xl rounded-2xl border border-white/70 shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer overflow-hidden group"
       >
-        <div className={`absolute top-0 left-0 w-1 h-full ${prio.bar} rounded-l-2xl`} />
+        <div className={`absolute top-0 left-0 w-1.5 h-full ${prio.bar} rounded-l-2xl`} />
         <div className="p-3.5 pl-4">
           <div className="flex items-start gap-2">
             <button onClick={toggleDone} className="mt-0.5 flex-shrink-0">
@@ -83,7 +87,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
       onClick={() => onClick(todo)}
       className="relative bg-white/65 backdrop-blur-xl rounded-2xl border border-white/70 shadow-sm hover:shadow-md hover:scale-[1.002] active:scale-[0.999] transition-all cursor-pointer overflow-hidden group flex items-center gap-3 px-4 py-3"
     >
-      <div className={`absolute top-0 left-0 w-1 h-full ${prio.bar}`} />
+      <div className={`absolute top-0 left-0 w-1.5 h-full ${prio.bar}`} />
       <button onClick={toggleDone} className="flex-shrink-0 pl-1">
         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
           todo.status === "erledigt" ? "bg-emerald-500 border-emerald-500" : "border-slate-300 hover:border-blue-400"

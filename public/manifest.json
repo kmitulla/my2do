@@ -1,0 +1,19 @@
+{
+  "name": "2Do",
+  "short_name": "2Do",
+  "description": "Deine smarte To-Do App",
+  "start_url": "/my2do/",
+  "scope": "/my2do/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://media.base44.com/images/public/69e7968cd17aabed4e8f6ec9/9e1d2bd0d_generated_image.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

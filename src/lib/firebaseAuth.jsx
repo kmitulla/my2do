@@ -23,13 +23,19 @@ export const FirebaseAuthProvider = ({ children }) => {
       if (firebaseUser) {
         setUser(firebaseUser);
         const profileDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        const publicProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName || firebaseUser.email,
+        };
+        // Always upsert public profile for sharing feature
+        await setDoc(doc(db, "userProfiles", firebaseUser.uid), publicProfile, { merge: true });
+
         if (profileDoc.exists()) {
           setUserProfile(profileDoc.data());
         } else {
           const profile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName || firebaseUser.email,
+            ...publicProfile,
             role: "user",
             createdAt: serverTimestamp(),
           };
@@ -53,13 +59,10 @@ export const FirebaseAuthProvider = ({ children }) => {
   const createUser = async (email, password, displayName) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName });
-    await setDoc(doc(db, "users", cred.user.uid), {
-      uid: cred.user.uid,
-      email,
-      displayName,
-      role: "user",
-      createdAt: serverTimestamp(),
-    });
+    const profile = { uid: cred.user.uid, email, displayName, role: "user", createdAt: serverTimestamp() };
+    await setDoc(doc(db, "users", cred.user.uid), profile);
+    // Also write public profile
+    await setDoc(doc(db, "userProfiles", cred.user.uid), { uid: cred.user.uid, email, displayName }, { merge: true });
     return cred;
   };
 

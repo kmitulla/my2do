@@ -130,6 +130,9 @@ export const getSharedTodo = async (sharedTodoId) => {
 };
 
 export const getAllUsers = async () => {
-  const snap = await getDocs(collection(db, "users"));
+  const snap = await getDocs(collection(db, "userProfiles"));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
+
+export const upsertUserProfile = (uid, data) =>
+  setDoc(doc(db, "userProfiles", uid), data, { merge: true });

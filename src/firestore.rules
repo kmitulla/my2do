@@ -1,0 +1,35 @@
+// ════════════════════════════════════════════════════════
+//  FIRESTORE SECURITY RULES – 2Do App  (Version 0.2)
+//  → Kopiere diese Rules in die Firebase Console:
+//    Firebase Console → Firestore → Rules
+// ════════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User private data (todos, categories, settings, inbox) ──────────────
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── Public user profiles (for sharing feature) ──────────────────────────
+    // Every authenticated user can read all profiles (to find users to share with)
+    // Only the owner can write their own profile
+    match /userProfiles/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── Shared todos (collaboration) ────────────────────────────────────────
+    // Any authenticated user can create a shared todo
+    // Only collaborators or the sender can read/update
+    match /sharedTodos/{todoId} {
+      allow create: if request.auth != null;
+      allow read, update: if request.auth != null && (
+        resource.data.sharedBy == request.auth.uid ||
+        request.auth.uid in resource.data.collaborators
+      );
+    }
+  }
+}

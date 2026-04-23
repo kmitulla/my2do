@@ -182,10 +182,11 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
       onClick={handleBackdropClick}
-
+      style={{ touchAction: "pan-y" }}
 >
       <div className="w-full sm:max-w-lg bg-white/85 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 max-h-[95vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}>
+        onClick={(e) => e.stopPropagation()}
+        style={{ touchAction: "pan-y" }}>
 
         {/* Header */}
         <div className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-b border-slate-100 px-5 py-4 flex items-center gap-3 rounded-t-3xl">

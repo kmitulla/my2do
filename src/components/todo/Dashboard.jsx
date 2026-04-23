@@ -11,6 +11,7 @@ import SettingsPanel from "./SettingsPanel";
 import InboxPanel from "./InboxPanel";
 import ExportPanel from "./ExportPanel";
 import AICreateTodo from "./AICreateTodo";
+import SwipeableTodoCard from "./SwipeableTodoCard";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
@@ -176,7 +177,9 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   filtered.map((todo) => (
-                    <TodoCard key={todo.id} todo={todo} view={view} onClick={setSelectedTodo} />
+                    view === "grid"
+                      ? <TodoCard key={todo.id} todo={todo} view={view} onClick={setSelectedTodo} />
+                      : <SwipeableTodoCard key={todo.id} todo={todo} onClick={setSelectedTodo} />
                   ))
                 )}
               </div>
