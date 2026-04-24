@@ -240,7 +240,10 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
 
           {/* Wiedervorlage — quick buttons + date picker */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">🔄 Wiedervorlage</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/></svg>
+              Wiedervorlage
+            </label>
             <QuickDateButtons
               value={form.wiedervorlage}
               onChange={(v) => set("wiedervorlage", v)}
@@ -299,7 +302,10 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
 
           {/* Deadline — quick buttons + date picker */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">📅 Deadline</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              Deadline
+            </label>
             <QuickDateButtons
               value={form.deadline}
               onChange={(v) => set("deadline", v)}
@@ -309,15 +315,20 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
 
           {/* Email + Calendar - compact side by side */}
           <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">📨 E-Mail &amp; 📆 Kalender</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              E-Mail &amp; Kalender
+            </label>
             <div className="flex gap-2">
               <button onClick={openEmailClient}
-                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all">
-                📨 E-Mail
+                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all flex items-center justify-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                E-Mail
               </button>
               <button onClick={openCalendar}
-                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold hover:shadow-lg transition-all">
-                📆 Kalender
+                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Kalender
               </button>
             </div>
             <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender</p>
@@ -325,10 +336,14 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
 
           {/* Share Section */}
           <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">👥 Notiz teilen</label>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Notiz teilen
+            </label>
             {!showShare ? (
               <button onClick={loadUsers}
-                className="w-full py-2.5 rounded-2xl bg-violet-50 border border-violet-200 text-violet-600 text-sm font-medium hover:bg-violet-100 transition-all">
+                className="w-full py-2.5 rounded-2xl bg-violet-50 border border-violet-200 text-violet-600 text-sm font-medium hover:bg-violet-100 transition-all flex items-center justify-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 Notiz an User senden
               </button>
             ) : (

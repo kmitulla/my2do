@@ -108,13 +108,21 @@ export default function Dashboard() {
   const aiEnabled = userProfile?.aiEnabled;
 
   // Tabs: 0=Aufgaben, 1=Übersicht, 2=Inbox, 3=Export, 4=Admin(if admin), 5=Settings
+  const TAB_ICONS = {
+    "Aufgaben": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+    "Übersicht": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+    "Inbox": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>,
+    "Export": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+    "Admin": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 19.07l1.41-1.41M19.07 19.07l-1.41-1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>,
+    "Einstell.": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+  };
   const tabs = [
-    { label: "Aufgaben", icon: "✓" },
-    { label: "Übersicht", icon: "◎" },
-    { label: "Inbox", icon: "📬", badge: inboxCount },
-    { label: "Export", icon: "⬆" },
-    ...(isAdmin ? [{ label: "Admin", icon: "⚙" }] : []),
-    { label: "Einstell.", icon: "👤" },
+    { label: "Aufgaben" },
+    { label: "Übersicht" },
+    { label: "Inbox", badge: inboxCount },
+    { label: "Export" },
+    ...(isAdmin ? [{ label: "Admin" }] : []),
+    { label: "Einstell." },
   ];
 
   return (
@@ -180,7 +188,7 @@ export default function Dashboard() {
                 activeTab === i ? "bg-white shadow-md text-blue-600" : "text-slate-500 hover:text-slate-700"
               }`}>
               <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden">{tab.icon}</span>
+              <span className="sm:hidden flex items-center justify-center">{TAB_ICONS[tab.label]}</span>
               {tab.badge > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
                   {tab.badge}

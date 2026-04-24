@@ -15,34 +15,34 @@ export default function AICreateTodo({ categories, onCreated, onClose }) {
     setLoading(true);
     setError("");
     try {
-      const prompt = `Du bist ein Aufgaben-Assistent. Lies folgenden Text und extrahiere daraus strukturierte Aufgaben-Daten auf Deutsch.
-
-Text: "${input}"
-
-Antworte NUR mit JSON in diesem exakten Format:
-{
-  "title": "Kurzer Titel der Aufgabe",
-  "description": "Ausführliche, professionelle Beschreibung",
-  "prio": "A" oder "B" oder "C",
-  "deadline": "YYYY-MM-DDTHH:mm" oder null,
-  "wiedervorlage": "YYYY-MM-DDTHH:mm" oder null,
-  "status": "offen",
-  "category": "Kategoriename falls erwähnt sonst leer string"
-}`;
+      const systemPrompt = `Du bist ein Aufgaben-Assistent. Extrahiere aus dem Text strukturierte Aufgaben-Daten auf Deutsch.
+Antworte ausschliesslich mit einem validen JSON-Objekt mit diesen Feldern:
+- title: string (kurzer Titel)
+- description: string (ausfuehrliche Beschreibung)
+- prio: string (genau "A", "B" oder "C")
+- deadline: string im Format YYYY-MM-DDTHH:mm oder null
+- wiedervorlage: string im Format YYYY-MM-DDTHH:mm oder null
+- status: string (immer "offen")
+- category: string (leer wenn nicht erwaehnt)
+Kein Markdown, kein erklaerende Text, nur das JSON-Objekt.`;
 
       const res = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
         body: JSON.stringify({
           model: "gpt-4o-mini",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.3,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: input },
+          ],
+          temperature: 0.2,
+          response_format: { type: "json_object" },
         }),
       });
       if (!res.ok) throw new Error("API-Fehler: " + res.status);
       const data = await res.json();
       const text = data.choices[0].message.content;
-      const json = JSON.parse(text.match(/\{[\s\S]*\}/)[0]);
+      const json = JSON.parse(text);
 
       await addTodo(user.uid, {
         title: json.title || "Neue Aufgabe",
