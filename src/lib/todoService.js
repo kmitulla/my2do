@@ -70,6 +70,7 @@ export const sendTodoToUsers = async (senderUid, senderName, todo, targetUids, c
     wiedervorlage: toDate(todo.wiedervorlage),
     sharedBy: senderUid,
     sharedByName: senderName,
+    targetUids: targetUids,
     collaborators: collaborate ? [senderUid, ...targetUids] : [],
     isCollaborative: !!collaborate,
     originalId: todo.id,
