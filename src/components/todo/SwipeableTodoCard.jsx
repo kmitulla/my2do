@@ -1,10 +1,51 @@
-import React, { useRef, useState, useEffect, useCallback, useId } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { updateTodo, deleteTodo } from "@/lib/todoService";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
-const STATUS_ICON = { erledigt: "✓", "in Arbeit": "▶", wartend: "⏸" };
 
+// SVG icons instead of emojis
+const IconCheck = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+);
+const IconArchive = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>
+  </svg>
+);
+const IconTrash = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+  </svg>
+);
+const IconClock = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+);
+const IconCalendar = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+  </svg>
+);
+const IconWarning = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  </svg>
+);
+const IconPlay = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+);
+const IconPause = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+);
+const IconDone = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+);
+
+// +1 … +7 days only (no calendar step)
 const WIEDERVORLAGE_STEPS = [
   { label: "+1", days: 1 },
   { label: "+2", days: 2 },
@@ -13,16 +54,15 @@ const WIEDERVORLAGE_STEPS = [
   { label: "+5", days: 5 },
   { label: "+6", days: 6 },
   { label: "+7", days: 7 },
-  { label: "📅", days: null }, // calendar
 ];
 
 const LEFT_STAGES = [
-  { threshold: 38,  label: "✓ Erledigt",    action: "done",    bg: "rgba(34,197,94,0.92)",  bg2: "rgba(16,185,129,0.88)" },
-  { threshold: 80,  label: "📦 Archivieren", action: "archive", bg: "rgba(245,158,11,0.92)", bg2: "rgba(217,119,6,0.88)" },
-  { threshold: 130, label: "🗑 Löschen",     action: "delete",  bg: "rgba(239,68,68,0.92)",  bg2: "rgba(220,38,38,0.88)" },
+  { threshold: 38,  label: "Erledigt",    action: "done",    bg: "rgba(34,197,94,0.92)",  bg2: "rgba(16,185,129,0.88)",  Icon: IconCheck },
+  { threshold: 80,  label: "Archivieren", action: "archive", bg: "rgba(245,158,11,0.92)", bg2: "rgba(217,119,6,0.88)",   Icon: IconArchive },
+  { threshold: 130, label: "Löschen",     action: "delete",  bg: "rgba(239,68,68,0.92)",  bg2: "rgba(220,38,38,0.88)",   Icon: IconTrash },
 ];
 
-const STEP_W = 34;
+const STEP_W = 38;
 const MAX_RIGHT = WIEDERVORLAGE_STEPS.length * STEP_W + 10;
 const MAX_LEFT = 150;
 
@@ -70,38 +110,14 @@ function BurstAnimation({ onDone, color = "#22c55e" }) {
           width: s.size, height: s.size,
           background: i % 3 === 0 ? color : i % 3 === 1 ? "#facc15" : "#818cf8",
           animation: `spark-fly 0.9s ease-out ${i * 0.03}s forwards`,
-          "--dx": `${s.dx}px`,
-          "--dy": `${s.dy}px`,
+          "--dx": `${s.dx}px`, "--dy": `${s.dy}px`,
         }} />
       ))}
-      <div className="absolute" style={{ animation: "done-icon 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.1s both", fontSize: 28 }}>✓</div>
       <style>{`
         @keyframes burst-ripple { 0% { width:20px;height:20px;opacity:0.8 } 100% { width:100px;height:100px;opacity:0 } }
         @keyframes spark-fly { 0% { transform:translate(0,0) scale(1);opacity:1 } 100% { transform:translate(var(--dx),var(--dy)) scale(0);opacity:0 } }
-        @keyframes done-icon { 0% { transform:scale(0) rotate(-30deg);opacity:0 } 100% { transform:scale(1) rotate(0deg);opacity:1 } }
       `}</style>
     </div>
-  );
-}
-
-// Calendar button using label+input trick — no showPicker needed, works in iframes
-function CalendarPickerButton({ onPick }) {
-  const id = useId();
-  return (
-    <label
-      htmlFor={id}
-      className="px-2 py-1 rounded-lg text-[11px] font-bold bg-indigo-100 text-indigo-600 cursor-pointer select-none active:scale-95 transition-all"
-      onClick={(e) => e.stopPropagation()}
-    >
-      📅
-      <input
-        id={id}
-        type="date"
-        min={new Date().toISOString().split("T")[0]}
-        onChange={(e) => { if (e.target.value) onPick(new Date(e.target.value)); }}
-        style={{ position: "absolute", opacity: 0, width: 0, height: 0, pointerEvents: "none" }}
-      />
-    </label>
   );
 }
 
@@ -109,10 +125,8 @@ export default function SwipeableTodoCard({ todo, onClick }) {
   const { user } = useFirebaseAuth();
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
-  const [confirmed, setConfirmed] = useState(null); // only for left-swipe actions
+  const [confirmed, setConfirmed] = useState(null);
   const [showBurst, setShowBurst] = useState(null);
-  // When swiped right and released on calendar step → keep card revealed + show picker
-  const [showCalendarReveal, setShowCalendarReveal] = useState(false);
 
   const startX = useRef(0);
   const startY = useRef(0);
@@ -121,6 +135,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
   const confirmTimer = useRef(null);
   const isDirectional = useRef(null);
   const isDragging = useRef(false);
+  const mouseDown = useRef(false);
 
   // Auto-dismiss left-swipe confirmation after 2.3s
   useEffect(() => {
@@ -133,19 +148,8 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     return () => clearTimeout(confirmTimer.current);
   }, [confirmed]);
 
-  // Auto-dismiss calendar reveal after 8s if no pick
-  useEffect(() => {
-    if (showCalendarReveal) {
-      const t = setTimeout(() => {
-        setShowCalendarReveal(false);
-        setOffsetX(0);
-      }, 8000);
-      return () => clearTimeout(t);
-    }
-  }, [showCalendarReveal]);
-
   const handlePointerStart = useCallback((clientX, clientY) => {
-    if (confirmed || showBurst || showCalendarReveal) return;
+    if (confirmed || showBurst) return;
     startX.current = clientX;
     startY.current = clientY;
     dx.current = 0;
@@ -153,10 +157,10 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     isDirectional.current = null;
     isDragging.current = false;
     setDragging(false);
-  }, [confirmed, showBurst, showCalendarReveal]);
+  }, [confirmed, showBurst]);
 
   const handlePointerMove = useCallback((clientX, clientY) => {
-    if (confirmed || showBurst || showCalendarReveal) return;
+    if (confirmed || showBurst) return;
     const ddx = clientX - startX.current;
     const ddy = clientY - startY.current;
 
@@ -189,10 +193,10 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         vibrate(12);
       }
     }
-  }, [confirmed, showBurst, showCalendarReveal]);
+  }, [confirmed, showBurst]);
 
   const handlePointerEnd = useCallback(() => {
-    if (confirmed || showBurst || showCalendarReveal) return;
+    if (confirmed || showBurst) return;
     setDragging(false);
     const d = dx.current;
     isDirectional.current = null;
@@ -201,17 +205,17 @@ export default function SwipeableTodoCard({ todo, onClick }) {
       const abs = Math.abs(d);
       let picked = LEFT_STAGES[0];
       for (const s of LEFT_STAGES) { if (abs >= s.threshold) picked = s; }
-      setConfirmed({ action: picked.action, label: `${picked.label}?`, bg: picked.bg, bg2: picked.bg2 });
+      // Show confirmation overlay for ALL left-swipe actions
+      setConfirmed({ action: picked.action, label: picked.label, bg: picked.bg, bg2: picked.bg2, Icon: picked.Icon });
       setOffsetX(0);
     } else if (d > STEP_W * 0.7) {
       const stageIdx = Math.min(Math.floor(d / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
       const step = WIEDERVORLAGE_STEPS[stageIdx];
-      if (step.days === null) {
-        // Calendar step: keep card slid open, show the picker buttons
-        setShowCalendarReveal(true);
-        setOffsetX(MAX_RIGHT); // keep fully revealed
+      // Confirm for +7, direct save for others
+      if (step.days === 7) {
+        setConfirmed({ action: "wiedervorlage7", label: "+7 Tage Wiedervorlage", bg: "rgba(99,102,241,0.92)", bg2: "rgba(79,70,229,0.88)", Icon: null });
+        setOffsetX(0);
       } else {
-        // Direct wiedervorlage +n days — no confirmation needed
         const newDate = addDays(step.days);
         setOffsetX(0);
         setShowBurst("wiedervorlage");
@@ -222,40 +226,31 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     }
     lockedStage.current = -1;
     dx.current = 0;
-  }, [confirmed, showBurst, showCalendarReveal, user.uid, todo.id]);
+  }, [confirmed, showBurst, user.uid, todo.id]);
 
   // Touch events
   const onTouchStart = (e) => handlePointerStart(e.touches[0].clientX, e.touches[0].clientY);
   const onTouchMove = (e) => handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
   const onTouchEnd = () => handlePointerEnd();
 
-  // Mouse events (for desktop)
-  const mouseDown = useRef(false);
   const onMouseDown = (e) => {
     if (e.button !== 0) return;
     mouseDown.current = true;
     handlePointerStart(e.clientX, e.clientY);
   };
-  const onMouseMove = (e) => {
-    if (!mouseDown.current) return;
-    handlePointerMove(e.clientX, e.clientY);
-  };
-  const onMouseUp = () => {
-    if (!mouseDown.current) return;
-    mouseDown.current = false;
-    handlePointerEnd();
-  };
+  const onMouseMove = (e) => { if (!mouseDown.current) return; handlePointerMove(e.clientX, e.clientY); };
+  const onMouseUp = () => { if (!mouseDown.current) return; mouseDown.current = false; handlePointerEnd(); };
 
   useEffect(() => {
-    const move = (e) => onMouseMove(e);
-    const up = () => onMouseUp();
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
   });
 
-  const executeLeftAction = async (action) => {
+  const executeConfirmed = async () => {
+    if (!confirmed) return;
     clearTimeout(confirmTimer.current);
+    const action = confirmed.action;
     setConfirmed(null);
     if (action === "done") {
       setShowBurst("done");
@@ -265,20 +260,15 @@ export default function SwipeableTodoCard({ todo, onClick }) {
       await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
     } else if (action === "delete") {
       await deleteTodo(user.uid, todo.id);
+    } else if (action === "wiedervorlage7") {
+      setShowBurst("wiedervorlage");
+      await updateTodo(user.uid, todo.id, { wiedervorlage: addDays(7) });
     }
   };
 
-  const handleDatePicked = async (date) => {
-    setShowCalendarReveal(false);
-    setOffsetX(0);
-    setShowBurst("wiedervorlage");
-    await updateTodo(user.uid, todo.id, { wiedervorlage: date });
-  };
-
   const handleCardClick = () => {
-    if (showCalendarReveal) return;
     if (confirmed) {
-      executeLeftAction(confirmed.action);
+      executeConfirmed();
     } else if (!isDragging.current) {
       onClick(todo);
     }
@@ -295,6 +285,14 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     return d < new Date() && todo.status !== "erledigt";
   })();
 
+  const statusIcon = todo.status === "erledigt"
+    ? <IconDone />
+    : todo.status === "in Arbeit"
+    ? <IconPlay />
+    : todo.status === "wartend"
+    ? <IconPause />
+    : <span className="w-2.5 h-2.5 rounded-full border-2 border-slate-300 inline-block" />;
+
   return (
     <div className="relative overflow-visible rounded-2xl" style={{ minHeight: 56 }}>
       {showBurst && (
@@ -309,14 +307,14 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         <div className="absolute inset-0 flex items-center justify-end px-4 pointer-events-none rounded-2xl"
           style={{ background: `linear-gradient(270deg, ${leftStage.bg2}, transparent)`, opacity: 0.15 + Math.min(absLeft / MAX_LEFT, 1) * 0.4 }}>
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-base">{leftStage.label.split(" ")[0]}</span>
-            <span className="text-[10px] font-bold text-white/80">{leftStage.label.slice(leftStage.label.indexOf(" ") + 1)}</span>
+            <leftStage.Icon />
+            <span className="text-[10px] font-bold text-white/80">{leftStage.label}</span>
           </div>
         </div>
       )}
 
       {/* Right background hint (while dragging) */}
-      {offsetX > 20 && !showCalendarReveal && rightLabel && (
+      {offsetX > 20 && rightLabel && (
         <div className="absolute inset-0 flex items-center justify-start px-4 pointer-events-none rounded-2xl"
           style={{ background: "rgba(99,102,241,0.08)" }}>
           <div className="flex flex-col items-start gap-0.5">
@@ -333,26 +331,13 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         </div>
       )}
 
-      {/* Calendar reveal panel — visible behind the card when swiped to calendar step */}
-      {showCalendarReveal && (
-        <div className="absolute inset-0 flex items-center justify-start pl-3 gap-1.5 rounded-2xl"
-          style={{ background: "rgba(99,102,241,0.1)" }}>
-          <span className="text-[10px] font-semibold text-indigo-500 mr-0.5">Datum:</span>
-          <CalendarPickerButton onPick={handleDatePicked} />
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowCalendarReveal(false); setOffsetX(0); }}
-            className="px-2 py-1 rounded-lg text-[10px] bg-slate-200 text-slate-500 active:scale-95 transition-all"
-          >✕</button>
-        </div>
-      )}
-
-      {/* Left-swipe confirm overlay */}
+      {/* Confirm overlay */}
       {confirmed && (
         <div
-          onClick={(e) => { e.stopPropagation(); executeLeftAction(confirmed.action); }}
+          onClick={(e) => { e.stopPropagation(); executeConfirmed(); }}
           className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl cursor-pointer"
           style={{ background: `linear-gradient(135deg, ${confirmed.bg}, ${confirmed.bg2})`, backdropFilter: "blur(4px)" }}>
-          <span className="text-white font-bold text-sm">{confirmed.label}</span>
+          <span className="text-white font-bold text-sm">{confirmed.label}?</span>
           <span className="text-white/70 text-[10px] mt-0.5">Tippen zum Bestätigen</span>
         </div>
       )}
@@ -382,12 +367,15 @@ export default function SwipeableTodoCard({ todo, onClick }) {
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {todo.category && <span className="text-[10px] text-slate-400">{todo.category}</span>}
             {todo.deadline && (
-              <span className={`text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
-                {isOverdue ? "⚠ " : ""}{formatDate(todo.deadline)}
+              <span className={`flex items-center gap-0.5 text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
+                {isOverdue ? <IconWarning /> : <IconCalendar />}
+                {formatDate(todo.deadline)}
               </span>
             )}
             {todo.wiedervorlage && (
-              <span className="text-[10px] text-indigo-400">📅 {formatDate(todo.wiedervorlage)}</span>
+              <span className="flex items-center gap-0.5 text-[10px] text-indigo-400">
+                <IconClock />{formatDate(todo.wiedervorlage)}
+              </span>
             )}
           </div>
         </div>
@@ -396,8 +384,8 @@ export default function SwipeableTodoCard({ todo, onClick }) {
           todo.prio === "A" ? "bg-red-100 text-red-600" : todo.prio === "C" ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"
         }`}>{todo.prio}</span>
 
-        <span className={`text-[11px] flex-shrink-0 ${todo.status === "erledigt" ? "text-green-500" : "text-slate-400"}`}>
-          {STATUS_ICON[todo.status] || "○"}
+        <span className={`flex-shrink-0 ${todo.status === "erledigt" ? "text-green-500" : "text-slate-400"}`}>
+          {statusIcon}
         </span>
       </div>
     </div>

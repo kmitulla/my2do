@@ -106,6 +106,18 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white/80">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 bg-slate-50/80">
+        {/* Undo / Redo */}
+        <ToolBtn onClick={() => exec("undo")} title="Rückgängig">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
+          </svg>
+        </ToolBtn>
+        <ToolBtn onClick={() => exec("redo")} title="Wiederholen">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.5L23 10"/>
+          </svg>
+        </ToolBtn>
+        <Sep />
         {/* Basic */}
         <ToolBtn onClick={() => exec("bold")} title="Fett"><b>B</b></ToolBtn>
         <ToolBtn onClick={() => exec("italic")} title="Kursiv"><i>I</i></ToolBtn>

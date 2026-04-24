@@ -9,32 +9,23 @@ const PRIO_BASE = {
   C: { bg: "bg-green-100", text: "text-green-600", ring: "ring-green-400", glow: "rgba(34,197,94,0.5)" },
 };
 
-let _sharedTick = 0;
-const _listeners = new Set();
-function startSharedPulse() {
-  const schedule = () => {
-    const delay = 1500 + Math.random() * 2000;
-    setTimeout(() => {
-      _sharedTick++;
-      _listeners.forEach((fn) => fn(_sharedTick));
-      schedule();
-    }, delay);
-  };
-  schedule();
-}
-startSharedPulse();
+// Sequential pulsing: each button pulses 0.9s after the previous
+const PULSE_DELAYS = { A: 0, B: 0.9, C: 1.8 };
+const PULSE_CYCLE = 3.6; // seconds for one full cycle
 
-function usePulseTick() {
-  const [tick, setTick] = useState(_sharedTick);
+function PulseButton({ label, active, color, onClick, pulseDelay }) {
+  const [tick, setTick] = useState(0);
+
   useEffect(() => {
-    _listeners.add(setTick);
-    return () => _listeners.delete(setTick);
-  }, []);
-  return tick;
-}
+    // Start with offset so pulses are sequential
+    const initial = setTimeout(() => {
+      setTick((t) => t + 1);
+      const interval = setInterval(() => setTick((t) => t + 1), PULSE_CYCLE * 1000);
+      return () => clearInterval(interval);
+    }, pulseDelay * 1000);
+    return () => clearTimeout(initial);
+  }, [pulseDelay]);
 
-function PulseButton({ label, active, color, onClick }) {
-  const tick = usePulseTick();
   return (
     <button
       type="button"
@@ -70,6 +61,18 @@ function addDaysFromNow(n) {
 }
 
 const WIEDERVORLAGE_DAYS = [0, 1, 2, 3, 4, 5, 6, 7];
+
+// SVG icons for buttons
+const IconCheck = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>
+);
+const IconPlus = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
 
 export default function QuickAdd({ categories, onCreated }) {
   const { user } = useFirebaseAuth();
@@ -114,16 +117,15 @@ export default function QuickAdd({ categories, onCreated }) {
       deadline: null,
       wiedervorlage: wiedervorlage || null,
     };
-    const ref = await addTodo(user.uid, newTodo);
+    await addTodo(user.uid, newTodo);
     setTitle("");
     setWiedervorlage(null);
     setLoading(false);
     setTyping(false);
     inputRef.current?.focus();
-    // Don't call onCreated → no popup opens
   };
 
-  // Normal + button: open popup for editing
+  // + Button: save + open popup
   const handleSubmit = async (e) => {
     e?.preventDefault();
     const t = title.trim();
@@ -183,15 +185,15 @@ export default function QuickAdd({ categories, onCreated }) {
           type="button"
           onClick={handleQuickSave}
           disabled={!hasText || loading}
-          title="Schnell speichern (kein Popup)"
-          className="w-10 h-10 rounded-xl text-white flex items-center justify-center text-base font-bold active:scale-90 transition-all"
+          title="Schnell speichern"
+          className="w-10 h-10 rounded-xl text-white flex items-center justify-center active:scale-90 transition-all"
           style={{
             background: hasText ? "linear-gradient(135deg, #10b981, #059669)" : "rgba(148,163,184,0.5)",
             boxShadow: hasText ? "0 0 16px rgba(16,185,129,0.5)" : "none",
             transition: "all 0.3s ease",
           }}
         >
-          {loading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : "✓"}
+          {loading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : <IconCheck />}
         </button>
 
         {/* + Button: save + open popup */}
@@ -199,8 +201,8 @@ export default function QuickAdd({ categories, onCreated }) {
           type="button"
           onClick={handleSubmit}
           disabled={!hasText || loading}
-          title="Speichern &amp; bearbeiten"
-          className="w-10 h-10 rounded-xl text-white flex items-center justify-center text-xl font-bold active:scale-90 transition-all relative"
+          title="Speichern & bearbeiten"
+          className="w-10 h-10 rounded-xl text-white flex items-center justify-center active:scale-90 transition-all relative"
           style={{
             background: hasText ? "linear-gradient(135deg, #6366f1, #818cf8)" : "rgba(148,163,184,0.5)",
             boxShadow: hasText ? "0 0 20px rgba(99,102,241,0.6), 0 4px 12px rgba(99,102,241,0.3)" : "none",
@@ -211,7 +213,7 @@ export default function QuickAdd({ categories, onCreated }) {
             <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
           ) : (
             <>
-              <span>+</span>
+              <IconPlus />
               {hasText && (
                 <span className="absolute inset-0 rounded-xl" style={{
                   animation: "btn-pulse 1.5s ease-in-out infinite",
@@ -226,7 +228,14 @@ export default function QuickAdd({ categories, onCreated }) {
       {/* Prio + category */}
       <div className="flex gap-2 flex-wrap items-center">
         {PRIOS.map((p) => (
-          <PulseButton key={p} label={p} active={prio === p} color={PRIO_BASE[p]} onClick={() => setPrio(p)} />
+          <PulseButton
+            key={p}
+            label={p}
+            active={prio === p}
+            color={PRIO_BASE[p]}
+            onClick={() => setPrio(p)}
+            pulseDelay={PULSE_DELAYS[p]}
+          />
         ))}
 
         {categories.length > 0 && (
@@ -241,7 +250,9 @@ export default function QuickAdd({ categories, onCreated }) {
       {/* Wiedervorlage quick buttons */}
       <div>
         <div className="flex gap-1 flex-wrap items-center">
-          <span className="text-[10px] text-slate-400 font-medium mr-0.5">🔄</span>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" className="mr-0.5">
+            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/>
+          </svg>
           {WIEDERVORLAGE_DAYS.map((n) => {
             const isActive = wiedervorlage && (() => {
               const target = addDaysFromNow(n);
