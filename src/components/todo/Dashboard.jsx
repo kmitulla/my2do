@@ -79,25 +79,26 @@ export default function Dashboard() {
   const handleViewChange = (v) => { setView(v); localStorage.setItem(LS_VIEW, v); };
   const handleFiltersChange = (f) => { setFilters(f); localStorage.setItem(LS_FILTERS, JSON.stringify(f)); };
 
+  // searchAll: when active, ignore ALL filters and search archived+non-archived
+  const [searchAll, setSearchAll] = useState(false);
+
   const filtered = useMemo(() => {
     let result = todos;
-    // When searching with "Alle inkl. Archiv" active → show everything
-    if (search.trim() && filters.showArchived) {
-      // show all (archived + non-archived) — no filter
-    } else if (!filters.showArchived) {
-      result = result.filter((t) => !t.archived);
+    if (search.trim() && searchAll) {
+      // No filtering at all — search everything
     } else {
-      result = result.filter((t) => t.archived);
+      if (!filters.showArchived) result = result.filter((t) => !t.archived);
+      else result = result.filter((t) => t.archived);
+      if (filters.statuses?.length) result = result.filter((t) => filters.statuses.includes(t.status));
+      if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
+      if (filters.categories?.length) result = result.filter((t) => filters.categories.includes(t.category));
+      result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     }
-    if (filters.statuses?.length) result = result.filter((t) => filters.statuses.includes(t.status));
-    if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
-    if (filters.categories?.length) result = result.filter((t) => filters.categories.includes(t.category));
-    result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     if (search.trim()) result = result.filter((t) =>
       t.title?.toLowerCase().includes(search.toLowerCase()) ||
       (t.description || "").replace(/<[^>]+>/g,"").toLowerCase().includes(search.toLowerCase()));
     return sortTodos(result, sortBy);
-  }, [todos, filters, sortBy, search]);
+  }, [todos, filters, sortBy, search, searchAll]);
 
   // Handle newly created todo: open it immediately
   const handleQuickCreated = (newTodo) => {
@@ -172,12 +173,12 @@ export default function Dashboard() {
                   <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                   </svg>
-                  <input value={search} onChange={(e) => setSearch(e.target.value)}
+                  <input value={search} onChange={(e) => { setSearch(e.target.value); if (!e.target.value) setSearchAll(false); }}
                     placeholder="Suchen..."
                     className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-white/70 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[16px]" />
                   {search && (
                     <button
-                      onClick={() => setSearch("")}
+                      onClick={() => { setSearch(""); setSearchAll(false); }}
                       className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-300 flex items-center justify-center text-white hover:bg-slate-400 transition-all"
                       style={{ fontSize: 10, lineHeight: 1 }}
                     >✕</button>
@@ -185,14 +186,14 @@ export default function Dashboard() {
                 </div>
                 {search && (
                   <button
-                    onClick={() => handleFiltersChange({ ...filters, showArchived: !filters.showArchived })}
+                    onClick={() => setSearchAll((v) => !v)}
                     className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all ${
-                      filters.showArchived
+                      searchAll
                         ? "bg-indigo-100 text-indigo-600 border border-indigo-200"
                         : "bg-slate-100 text-slate-500 border border-slate-200"
                     }`}
                   >
-                    {filters.showArchived ? "📦 Nur Archiv" : "🔍 Alle inkl. Archiv"}
+                    {searchAll ? "🔍 Alle Notizen (aktiv)" : "🔍 Alle Notizen suchen"}
                   </button>
                 )}
               </div>

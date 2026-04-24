@@ -9,12 +9,10 @@ const PRIO_BASE = {
   C: { bg: "bg-green-100", text: "text-green-600", ring: "ring-green-400", glow: "rgba(34,197,94,0.5)" },
 };
 
-// Shared pulse tick — all buttons pulse together
 let _sharedTick = 0;
 const _listeners = new Set();
 function startSharedPulse() {
   const schedule = () => {
-    // Irregular but shared: 1.5s–3.5s
     const delay = 1500 + Math.random() * 2000;
     setTimeout(() => {
       _sharedTick++;
@@ -37,9 +35,9 @@ function usePulseTick() {
 
 function PulseButton({ label, active, color, onClick }) {
   const tick = usePulseTick();
-
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all border overflow-visible ${
         active
@@ -48,39 +46,37 @@ function PulseButton({ label, active, color, onClick }) {
       }`}
       style={active ? { boxShadow: `0 0 12px ${color.glow}, 0 2px 8px rgba(0,0,0,0.08)` } : {}}
     >
-      {/* Sync pulse ring */}
-      <span
-        key={tick}
-        className="absolute inset-0 rounded-lg pointer-events-none"
-        style={{
-          border: `1.5px solid ${color.glow}`,
-          animation: "quick-pulse 0.9s ease-out forwards",
-        }}
-      />
+      <span key={tick} className="absolute inset-0 rounded-lg pointer-events-none"
+        style={{ border: `1.5px solid ${color.glow}`, animation: "quick-pulse 0.9s ease-out forwards" }} />
       Prio {label}
     </button>
   );
 }
 
-// Floating particles around input when typing
 function InputParticle({ x, y, color }) {
   return (
     <div className="absolute pointer-events-none" style={{
-      left: x, top: y,
-      width: 4, height: 4,
-      borderRadius: "50%",
-      background: color,
-      animation: "particle-float 0.8s ease-out forwards",
-      zIndex: 10,
+      left: x, top: y, width: 4, height: 4, borderRadius: "50%",
+      background: color, animation: "particle-float 0.8s ease-out forwards", zIndex: 10,
     }} />
   );
 }
+
+function addDaysFromNow(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  d.setHours(9, 0, 0, 0);
+  return d;
+}
+
+const WIEDERVORLAGE_DAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 export default function QuickAdd({ categories, onCreated }) {
   const { user } = useFirebaseAuth();
   const [title, setTitle] = useState("");
   const [prio, setPrio] = useState("B");
   const [category, setCategory] = useState("");
+  const [wiedervorlage, setWiedervorlage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [typing, setTyping] = useState(false);
   const [particles, setParticles] = useState([]);
@@ -94,7 +90,6 @@ export default function QuickAdd({ categories, onCreated }) {
     clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => setTyping(false), 1000);
 
-    // Spawn particle
     if (inputRef.current && e.target.value.length % 2 === 0) {
       const rect = inputRef.current.getBoundingClientRect();
       const containerRect = inputRef.current.parentElement.getBoundingClientRect();
@@ -108,14 +103,41 @@ export default function QuickAdd({ categories, onCreated }) {
     }
   };
 
+  // Quick save: just save, no popup
+  const handleQuickSave = async () => {
+    const t = title.trim();
+    if (!t || loading) return;
+    setLoading(true);
+    const newTodo = {
+      title: t, prio, category: category || "",
+      status: "offen", description: "",
+      deadline: null,
+      wiedervorlage: wiedervorlage || null,
+    };
+    const ref = await addTodo(user.uid, newTodo);
+    setTitle("");
+    setWiedervorlage(null);
+    setLoading(false);
+    setTyping(false);
+    inputRef.current?.focus();
+    // Don't call onCreated → no popup opens
+  };
+
+  // Normal + button: open popup for editing
   const handleSubmit = async (e) => {
     e?.preventDefault();
     const t = title.trim();
     if (!t || loading) return;
     setLoading(true);
-    const newTodo = { title: t, prio, category: category || "", status: "offen", description: "", deadline: null, wiedervorlage: null };
+    const newTodo = {
+      title: t, prio, category: category || "",
+      status: "offen", description: "",
+      deadline: null,
+      wiedervorlage: wiedervorlage || null,
+    };
     const ref = await addTodo(user.uid, newTodo);
     setTitle("");
+    setWiedervorlage(null);
     setLoading(false);
     setTyping(false);
     inputRef.current?.focus();
@@ -128,28 +150,23 @@ export default function QuickAdd({ categories, onCreated }) {
     <div className="space-y-2.5">
       {/* Input row */}
       <div className="flex gap-2 items-center relative">
-        {/* Particle container */}
         <div className="absolute inset-0 pointer-events-none overflow-visible z-10">
           {particles.map((p) => <InputParticle key={p.id} x={p.x} y={p.y} color={p.color} />)}
         </div>
 
-        {/* Input with typing glow */}
         <div className="relative flex-1">
           <input
             ref={inputRef}
             value={title}
             onChange={handleChange}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            onKeyDown={(e) => e.key === "Enter" && handleQuickSave()}
             placeholder="Neue Aufgabe hinzufügen…"
             className="w-full px-3 py-2.5 rounded-xl bg-white/80 border text-slate-800 placeholder-slate-400 focus:outline-none text-[16px] transition-all duration-300"
             style={{
               borderColor: typing ? "rgba(99,102,241,0.6)" : "rgba(203,213,225,1)",
-              boxShadow: typing
-                ? "0 0 0 3px rgba(99,102,241,0.15), 0 0 20px rgba(99,102,241,0.1)"
-                : "none",
+              boxShadow: typing ? "0 0 0 3px rgba(99,102,241,0.15), 0 0 20px rgba(99,102,241,0.1)" : "none",
             }}
           />
-          {/* Typing scan line */}
           {typing && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-xl overflow-hidden">
               <div style={{
@@ -161,15 +178,31 @@ export default function QuickAdd({ categories, onCreated }) {
           )}
         </div>
 
-        {/* + Button with pulse */}
+        {/* Quick save (no popup) */}
         <button
+          type="button"
+          onClick={handleQuickSave}
+          disabled={!hasText || loading}
+          title="Schnell speichern (kein Popup)"
+          className="w-10 h-10 rounded-xl text-white flex items-center justify-center text-base font-bold active:scale-90 transition-all"
+          style={{
+            background: hasText ? "linear-gradient(135deg, #10b981, #059669)" : "rgba(148,163,184,0.5)",
+            boxShadow: hasText ? "0 0 16px rgba(16,185,129,0.5)" : "none",
+            transition: "all 0.3s ease",
+          }}
+        >
+          {loading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : "✓"}
+        </button>
+
+        {/* + Button: save + open popup */}
+        <button
+          type="button"
           onClick={handleSubmit}
           disabled={!hasText || loading}
+          title="Speichern &amp; bearbeiten"
           className="w-10 h-10 rounded-xl text-white flex items-center justify-center text-xl font-bold active:scale-90 transition-all relative"
           style={{
-            background: hasText
-              ? "linear-gradient(135deg, #6366f1, #818cf8)"
-              : "rgba(148,163,184,0.5)",
+            background: hasText ? "linear-gradient(135deg, #6366f1, #818cf8)" : "rgba(148,163,184,0.5)",
             boxShadow: hasText ? "0 0 20px rgba(99,102,241,0.6), 0 4px 12px rgba(99,102,241,0.3)" : "none",
             transition: "all 0.3s ease",
           }}
@@ -205,6 +238,48 @@ export default function QuickAdd({ categories, onCreated }) {
         )}
       </div>
 
+      {/* Wiedervorlage quick buttons */}
+      <div>
+        <div className="flex gap-1 flex-wrap items-center">
+          <span className="text-[10px] text-slate-400 font-medium mr-0.5">🔄</span>
+          {WIEDERVORLAGE_DAYS.map((n) => {
+            const isActive = wiedervorlage && (() => {
+              const target = addDaysFromNow(n);
+              return Math.abs(wiedervorlage.getTime() - target.getTime()) < 60 * 60 * 1000;
+            })();
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => {
+                  const newDate = addDaysFromNow(n);
+                  setWiedervorlage(isActive ? null : newDate);
+                }}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all active:scale-95 ${
+                  isActive
+                    ? "bg-indigo-500 text-white"
+                    : "bg-slate-100 text-slate-500 hover:bg-indigo-100 hover:text-indigo-600"
+                }`}
+              >
+                {n === 0 ? "+0" : `+${n}`}
+              </button>
+            );
+          })}
+          {wiedervorlage && (
+            <button
+              type="button"
+              onClick={() => setWiedervorlage(null)}
+              className="px-1.5 py-0.5 rounded-md text-[10px] bg-red-50 text-red-400 hover:bg-red-100 transition-all"
+            >✕</button>
+          )}
+          {wiedervorlage && (
+            <span className="text-[10px] text-indigo-500 font-medium ml-1">
+              {wiedervorlage.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+            </span>
+          )}
+        </div>
+      </div>
+
       <style>{`
         @keyframes quick-pulse {
           0% { transform: scale(1); opacity: 0.8; }
@@ -216,7 +291,7 @@ export default function QuickAdd({ categories, onCreated }) {
         }
         @keyframes particle-float {
           0% { transform: translate(0, 0) scale(1); opacity: 0.9; }
-          100% { transform: translate(${() => (Math.random() - 0.5) * 40}px, -30px) scale(0); opacity: 0; }
+          100% { transform: translate(0px, -30px) scale(0); opacity: 0; }
         }
         @keyframes scan-input {
           0% { transform: translateX(-100%); }
