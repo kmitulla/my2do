@@ -12,6 +12,7 @@ import InboxPanel from "./InboxPanel";
 import ExportPanel from "./ExportPanel";
 import AICreateTodo from "./AICreateTodo";
 import SwipeableTodoCard from "./SwipeableTodoCard";
+import TodoDetailModal from "./TodoDetailModal";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
@@ -166,7 +167,14 @@ export default function Dashboard() {
                 </svg>
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="Suchen..."
-                  className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white/70 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[16px]" />
+                  className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-white/70 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[16px]" />
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-300 flex items-center justify-center text-white hover:bg-slate-400 transition-all"
+                    style={{ fontSize: 10, lineHeight: 1 }}
+                  >✕</button>
+                )}
               </div>
               <FilterBar filters={filters} onFiltersChange={handleFiltersChange} categories={categories} sortBy={sortBy} onSortChange={handleSortChange} />
               <div className={view === "grid" ? "grid grid-cols-2 gap-2.5" : "space-y-2"}>
@@ -194,9 +202,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Detail Modal */}
+      {/* Detail Modal — iPhone glass animation */}
       {selectedTodo && (
-        <TodoDetail
+        <TodoDetailModal
           todo={selectedTodo}
           categories={categories}
           onClose={() => setSelectedTodo(null)}

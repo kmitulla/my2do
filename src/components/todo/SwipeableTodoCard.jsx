@@ -93,6 +93,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
   const [confirmed, setConfirmed] = useState(null);
   const [showBurst, setShowBurst] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
+  const calendarInputRef = useRef(null);
   const startX = useRef(0);
   const startY = useRef(0);
   const dx = useRef(0);
@@ -194,7 +195,15 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
     if (action === "calendar") {
       setConfirmed(null);
-      setShowCalendar(true);
+      // Small delay so the confirm overlay unmounts first, then open picker
+      setTimeout(() => {
+        setShowCalendar(true);
+        // After render, programmatically click/show the date input
+        setTimeout(() => {
+          calendarInputRef.current?.showPicker?.();
+          calendarInputRef.current?.click?.();
+        }, 80);
+      }, 50);
       return;
     }
 
@@ -299,15 +308,21 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
       {/* Calendar picker overlay */}
       {showCalendar && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/96 backdrop-blur-md shadow-lg border border-indigo-200">
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/96 backdrop-blur-md shadow-lg border border-indigo-200"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="flex flex-col items-center gap-2.5 p-4">
             <span className="text-xs font-bold text-slate-700">Wiedervorlage-Datum wählen</span>
-            <input type="date"
+            <input
+              ref={calendarInputRef}
+              type="date"
               className="px-3 py-2 rounded-xl border border-indigo-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
               onChange={handleCalendarChange}
               min={new Date().toISOString().split("T")[0]}
+              onClick={(e) => e.stopPropagation()}
             />
-            <button onClick={() => setShowCalendar(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Abbrechen</button>
+            <button onClick={(e) => { e.stopPropagation(); setShowCalendar(false); }} className="text-[11px] text-slate-400 hover:text-slate-600">Abbrechen</button>
           </div>
         </div>
       )}

@@ -204,12 +204,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
-      onClick={handleBackdropClick}
-      style={{ touchAction: "pan-y", overflowX: "hidden" }}
->
-      <div className="w-full sm:max-w-lg bg-white/85 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 max-h-[95vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+    <div className="w-full sm:max-w-lg bg-white/85 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 max-h-[95vh] flex flex-col mx-auto"
         style={{ touchAction: "pan-y", overflowX: "hidden", maxWidth: "100vw" }}>
 
         {/* Header */}
@@ -390,7 +385,6 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             {saving ? "..." : "Speichern"}
           </button>
         </div>
-      </div>
     </div>
   );
 }

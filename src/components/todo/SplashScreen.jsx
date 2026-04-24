@@ -160,7 +160,7 @@ export default function SplashScreen({ onDone }) {
               border: "1px solid rgba(167,139,250,0.4)",
               color: "rgba(167,139,250,0.9)",
               letterSpacing: "0.08em",
-            }}>v0.3</span>
+            }}>v0.4</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="h-px w-8" style={{ background: "linear-gradient(90deg, transparent, rgba(167,139,250,0.6))" }} />

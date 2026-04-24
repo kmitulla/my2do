@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import { subscribeFilterPresets, saveFilterPresets } from "@/lib/todoService";
 
 const SORT_OPTIONS = [
   { value: "createdAt_desc", label: "Erstellt (neu)" },
@@ -20,10 +21,6 @@ const PRIO_BTN = {
   C: { active: "bg-emerald-500 text-white", base: "bg-slate-100 text-slate-600" },
 };
 
-function getPresetKey(uid) {
-  return `filter_presets_${uid}`;
-}
-
 export default function FilterBar({ filters, onFiltersChange, categories, sortBy, onSortChange }) {
   const { user } = useFirebaseAuth();
   const [showFilters, setShowFilters] = useState(false);
@@ -31,18 +28,16 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
   const [presets, setPresets] = useState([]);
   const [newPresetName, setNewPresetName] = useState("");
 
-  // Load presets from localStorage
+  // Subscribe to Firestore presets (synced across devices)
   useEffect(() => {
     if (!user?.uid) return;
-    try {
-      const stored = JSON.parse(localStorage.getItem(getPresetKey(user.uid)) || "[]");
-      setPresets(stored);
-    } catch { setPresets([]); }
+    const unsub = subscribeFilterPresets(user.uid, setPresets);
+    return unsub;
   }, [user?.uid]);
 
   const savePresets = (updated) => {
     setPresets(updated);
-    if (user?.uid) localStorage.setItem(getPresetKey(user.uid), JSON.stringify(updated));
+    if (user?.uid) saveFilterPresets(user.uid, updated);
   };
 
   const handleSavePreset = () => {

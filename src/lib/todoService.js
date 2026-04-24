@@ -136,3 +136,14 @@ export const getAllUsers = async () => {
 
 export const upsertUserProfile = (uid, data) =>
   setDoc(doc(db, "userProfiles", uid), data, { merge: true });
+
+// --- FILTER PRESETS (synced per user in Firestore) ---
+export const filterPresetsDoc = (uid) => doc(db, "users", uid, "settings", "filterPresets");
+
+export const saveFilterPresets = (uid, presets) =>
+  setDoc(filterPresetsDoc(uid), { presets }, { merge: false });
+
+export const subscribeFilterPresets = (uid, callback) =>
+  onSnapshot(filterPresetsDoc(uid), (snap) => {
+    callback(snap.exists() ? (snap.data().presets || []) : []);
+  });
