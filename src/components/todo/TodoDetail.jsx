@@ -3,6 +3,7 @@ import { updateTodo, deleteTodo, addCategory, sendTodoToUsers, getAllUsers } fro
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { format } from "date-fns";
 import RichEditor from "./RichEditor";
+import QuickDateButtons from "./QuickDateButtons";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
@@ -237,6 +238,15 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             />
           </div>
 
+          {/* Wiedervorlage — quick buttons + date picker */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">🔄 Wiedervorlage</label>
+            <QuickDateButtons
+              value={form.wiedervorlage}
+              onChange={(v) => set("wiedervorlage", v)}
+            />
+          </div>
+
           {/* Prio */}
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität</label>
@@ -287,18 +297,14 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             )}
           </div>
 
-          {/* Deadline */}
+          {/* Deadline — quick buttons + date picker */}
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">📅 Deadline</label>
-            <input type="datetime-local" value={toInputDate(form.deadline)} onChange={(e) => set("deadline", e.target.value)}
-              className="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
-          </div>
-
-          {/* Wiedervorlage */}
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">🔄 Wiedervorlage</label>
-            <input type="datetime-local" value={toInputDate(form.wiedervorlage)} onChange={(e) => set("wiedervorlage", e.target.value)}
-              className="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
+            <QuickDateButtons
+              value={form.deadline}
+              onChange={(v) => set("deadline", v)}
+              withTime
+            />
           </div>
 
           {/* Email + Calendar - compact side by side */}

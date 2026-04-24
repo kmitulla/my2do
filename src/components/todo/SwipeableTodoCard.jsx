@@ -1,11 +1,10 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { updateTodo, deleteTodo } from "@/lib/todoService";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
 const STATUS_ICON = { erledigt: "✓", "in Arbeit": "▶", wartend: "⏸" };
 
-// Right swipe: +1..+7 days, then calendar
 const WIEDERVORLAGE_STEPS = [
   { label: "+1 Tag", days: 1 },
   { label: "+2 Tage", days: 2 },
@@ -17,7 +16,6 @@ const WIEDERVORLAGE_STEPS = [
   { label: "📅 Kalender", days: null },
 ];
 
-// Left swipe stages: erledigt → archivieren → löschen
 const LEFT_STAGES = [
   { threshold: 38,  label: "✓ Erledigt",    action: "done",    bg: "rgba(34,197,94,0.92)",  bg2: "rgba(16,185,129,0.88)" },
   { threshold: 80,  label: "📦 Archivieren", action: "archive", bg: "rgba(245,158,11,0.92)", bg2: "rgba(217,119,6,0.88)" },
@@ -86,20 +84,57 @@ function BurstAnimation({ onDone, color = "#22c55e" }) {
   );
 }
 
+// Invisible date input rendered always in DOM, triggered programmatically
+function HiddenDatePicker({ onPick, onCancel }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    // Must be triggered from a user-gesture context.
+    // We rely on the parent to mount us right after a tap so we're still in the gesture.
+    const input = ref.current;
+    if (!input) return;
+    // Try showPicker (modern browsers)
+    const tryOpen = () => {
+      try { input.showPicker(); } catch { input.focus(); input.click(); }
+    };
+    // Tiny rAF to let browser settle
+    const raf = requestAnimationFrame(() => requestAnimationFrame(tryOpen));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <input
+      ref={ref}
+      type="date"
+      style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 1, height: 1, top: 0, left: 0 }}
+      min={new Date().toISOString().split("T")[0]}
+      onChange={(e) => {
+        if (e.target.value) {
+          onPick(new Date(e.target.value));
+        } else {
+          onCancel();
+        }
+      }}
+      onBlur={() => setTimeout(onCancel, 200)}
+    />
+  );
+}
+
 export default function SwipeableTodoCard({ todo, onClick }) {
   const { user } = useFirebaseAuth();
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
   const [showBurst, setShowBurst] = useState(null);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const calendarInputRef = useRef(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   const startX = useRef(0);
   const startY = useRef(0);
   const dx = useRef(0);
   const lockedStage = useRef(-1);
   const confirmTimer = useRef(null);
-  const isDirectional = useRef(null); // "h" | "v" | null
+  const isDirectional = useRef(null);
+  const isDragging = useRef(false);
 
   // Auto-dismiss confirmation after 2.3s
   useEffect(() => {
@@ -112,20 +147,22 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     return () => clearTimeout(confirmTimer.current);
   }, [confirmed]);
 
-  const onTouchStart = (e) => {
+  // ── Pointer helpers (works for both touch and mouse) ──────────────────────
+  const handlePointerStart = useCallback((clientX, clientY) => {
     if (confirmed || showBurst) return;
-    startX.current = e.touches[0].clientX;
-    startY.current = e.touches[0].clientY;
+    startX.current = clientX;
+    startY.current = clientY;
     dx.current = 0;
     lockedStage.current = -1;
     isDirectional.current = null;
+    isDragging.current = false;
     setDragging(false);
-  };
+  }, [confirmed, showBurst]);
 
-  const onTouchMove = (e) => {
+  const handlePointerMove = useCallback((clientX, clientY) => {
     if (confirmed || showBurst) return;
-    const ddx = e.touches[0].clientX - startX.current;
-    const ddy = e.touches[0].clientY - startY.current;
+    const ddx = clientX - startX.current;
+    const ddy = clientY - startY.current;
 
     if (!isDirectional.current) {
       if (Math.abs(ddx) < 5 && Math.abs(ddy) < 5) return;
@@ -133,6 +170,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     }
     if (isDirectional.current === "v") return;
 
+    isDragging.current = true;
     setDragging(true);
     dx.current = ddx;
 
@@ -155,28 +193,24 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         vibrate(12);
       }
     }
-  };
+  }, [confirmed, showBurst]);
 
-  const onTouchEnd = () => {
+  const handlePointerEnd = useCallback(() => {
     if (confirmed || showBurst) return;
     setDragging(false);
     const d = dx.current;
     isDirectional.current = null;
 
     if (d < -LEFT_STAGES[0].threshold) {
-      // Determine which left stage
       const abs = Math.abs(d);
       let picked = LEFT_STAGES[0];
-      for (const s of LEFT_STAGES) {
-        if (abs >= s.threshold) picked = s;
-      }
+      for (const s of LEFT_STAGES) { if (abs >= s.threshold) picked = s; }
       setConfirmed({ action: picked.action, label: `${picked.label}?`, bg: picked.bg, bg2: picked.bg2 });
       setOffsetX(0);
     } else if (d > STEP_W * 0.7) {
       const stageIdx = Math.min(Math.floor(d / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
       const step = WIEDERVORLAGE_STEPS[stageIdx];
       if (step.days === null) {
-        // Show confirm overlay "Kalender öffnen"
         setConfirmed({ action: "calendar", label: "📅 Kalender öffnen", bg: "rgba(99,102,241,0.92)", bg2: "rgba(139,92,246,0.88)", isCalendar: true });
         setOffsetX(0);
       } else {
@@ -188,27 +222,50 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     }
     lockedStage.current = -1;
     dx.current = 0;
+  }, [confirmed, showBurst]);
+
+  // Touch events
+  const onTouchStart = (e) => handlePointerStart(e.touches[0].clientX, e.touches[0].clientY);
+  const onTouchMove = (e) => handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+  const onTouchEnd = () => handlePointerEnd();
+
+  // Mouse events (for desktop)
+  const mouseDown = useRef(false);
+  const onMouseDown = (e) => {
+    if (e.button !== 0) return;
+    mouseDown.current = true;
+    handlePointerStart(e.clientX, e.clientY);
   };
+  const onMouseMove = (e) => {
+    if (!mouseDown.current) return;
+    handlePointerMove(e.clientX, e.clientY);
+  };
+  const onMouseUp = (e) => {
+    if (!mouseDown.current) return;
+    mouseDown.current = false;
+    handlePointerEnd();
+  };
+
+  // Attach global mousemove/mouseup so drag works even outside the card
+  useEffect(() => {
+    const move = (e) => onMouseMove(e);
+    const up = (e) => onMouseUp(e);
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  });
 
   const executeAction = async (action, days) => {
     clearTimeout(confirmTimer.current);
 
     if (action === "calendar") {
       setConfirmed(null);
-      // Small delay so the confirm overlay unmounts first, then open picker
-      setTimeout(() => {
-        setShowCalendar(true);
-        // After render, programmatically click/show the date input
-        setTimeout(() => {
-          calendarInputRef.current?.showPicker?.();
-          calendarInputRef.current?.click?.();
-        }, 80);
-      }, 50);
+      // Mount the hidden date picker — still within the user-gesture tick
+      setShowDatePicker(true);
       return;
     }
 
     setConfirmed(null);
-
     if (action === "done") {
       setShowBurst("done");
       await updateTodo(user.uid, todo.id, { status: "erledigt" });
@@ -223,25 +280,21 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     }
   };
 
-  const handleCalendarChange = async (e) => {
-    const date = new Date(e.target.value);
-    setShowCalendar(false);
-    if (!isNaN(date.getTime())) {
-      setShowBurst("wiedervorlage");
-      await updateTodo(user.uid, todo.id, { wiedervorlage: date });
-    }
+  const handleDatePicked = async (date) => {
+    setShowDatePicker(false);
+    setShowBurst("wiedervorlage");
+    await updateTodo(user.uid, todo.id, { wiedervorlage: date });
   };
 
   const handleCardClick = () => {
-    if (showCalendar) return;
+    if (showDatePicker) return;
     if (confirmed) {
       executeAction(confirmed.action, confirmed.days);
-    } else if (!dragging) {
+    } else if (!isDragging.current) {
       onClick(todo);
     }
   };
 
-  // Visual indicators
   const rightStageIdx = offsetX > 0 ? Math.min(Math.floor(offsetX / STEP_W), WIEDERVORLAGE_STEPS.length - 1) : -1;
   const rightLabel = rightStageIdx >= 0 ? WIEDERVORLAGE_STEPS[rightStageIdx].label : null;
 
@@ -254,7 +307,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
   })();
 
   return (
-    <div className="relative overflow-hidden rounded-2xl" style={{ minHeight: 56 }}>
+    <div className="relative overflow-visible rounded-2xl" style={{ minHeight: 56 }}>
       {showBurst && (
         <BurstAnimation
           color={showBurst === "done" ? "#22c55e" : showBurst === "archive" ? "#f59e0b" : "#818cf8"}
@@ -262,9 +315,17 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         />
       )}
 
+      {/* Hidden date picker — mounted right after user taps "Kalender öffnen" */}
+      {showDatePicker && (
+        <HiddenDatePicker
+          onPick={handleDatePicked}
+          onCancel={() => setShowDatePicker(false)}
+        />
+      )}
+
       {/* Left background hint */}
       {offsetX < -20 && leftStage && (
-        <div className="absolute inset-0 flex items-center justify-end px-4 pointer-events-none"
+        <div className="absolute inset-0 flex items-center justify-end px-4 pointer-events-none rounded-2xl"
           style={{ background: `linear-gradient(270deg, ${leftStage.bg2}, transparent)`, opacity: 0.15 + Math.min(absLeft / MAX_LEFT, 1) * 0.4 }}>
           <div className="flex flex-col items-end gap-0.5">
             <span className="text-base">{leftStage.label.split(" ")[0]}</span>
@@ -275,7 +336,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
       {/* Right background hint */}
       {offsetX > 20 && rightLabel && (
-        <div className="absolute inset-0 flex items-center justify-start px-4 pointer-events-none"
+        <div className="absolute inset-0 flex items-center justify-start px-4 pointer-events-none rounded-2xl"
           style={{ background: "rgba(99,102,241,0.08)" }}>
           <div className="flex flex-col items-start gap-0.5">
             <span className="text-xs font-bold text-indigo-500">{rightLabel}</span>
@@ -293,7 +354,8 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
       {/* Confirm overlay */}
       {confirmed && (
-        <div onClick={() => executeAction(confirmed.action, confirmed.days)}
+        <div
+          onClick={(e) => { e.stopPropagation(); executeAction(confirmed.action, confirmed.days); }}
           className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl cursor-pointer"
           style={{
             background: `linear-gradient(135deg, ${confirmed.bg}, ${confirmed.bg2})`,
@@ -306,34 +368,14 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         </div>
       )}
 
-      {/* Calendar picker overlay */}
-      {showCalendar && (
-        <div
-          className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/96 backdrop-blur-md shadow-lg border border-indigo-200"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex flex-col items-center gap-2.5 p-4">
-            <span className="text-xs font-bold text-slate-700">Wiedervorlage-Datum wählen</span>
-            <input
-              ref={calendarInputRef}
-              type="date"
-              className="px-3 py-2 rounded-xl border border-indigo-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-              onChange={handleCalendarChange}
-              min={new Date().toISOString().split("T")[0]}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <button onClick={(e) => { e.stopPropagation(); setShowCalendar(false); }} className="text-[11px] text-slate-400 hover:text-slate-600">Abbrechen</button>
-          </div>
-        </div>
-      )}
-
       {/* Card */}
       <div
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onMouseDown={onMouseDown}
         onClick={handleCardClick}
-        className={`relative flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white border border-slate-100 shadow-sm cursor-pointer ${todo.status === "erledigt" ? "opacity-55" : ""}`}
+        className={`relative flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white border border-slate-100 shadow-sm cursor-pointer select-none ${todo.status === "erledigt" ? "opacity-55" : ""}`}
         style={{
           transform: `translateX(${offsetX}px)`,
           transition: dragging ? "none" : "transform 0.28s cubic-bezier(.22,.68,0,1.2)",

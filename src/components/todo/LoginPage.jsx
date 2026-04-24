@@ -170,7 +170,7 @@ function LoginAnimation({ onDone }) {
               border: "1px solid rgba(167,139,250,0.4)",
               color: "rgba(167,139,250,0.9)",
               letterSpacing: "0.1em",
-            }}>v0.4</span>
+            }}>v0.5</span>
           </div>
 
           {/* Scanning status */}
@@ -272,7 +272,7 @@ export default function LoginPage() {
             </form>
           </div>
 
-          <p className="text-center text-xs text-slate-400 mt-6">2Do v0.4 · Sicher &amp; verschlüsselt</p>
+          <p className="text-center text-xs text-slate-400 mt-6">2Do v0.5 · Sicher &amp; verschlüsselt</p>
         </div>
       </div>
     </>
