@@ -3,9 +3,9 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { updateTodo, deleteTodo } from "@/lib/todoService";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
-const STATUS_ICON = { erledigt: "✓", "in Arbeit": "▶", wartend: "⏸", "in Bearbeitung": "▶" };
+const STATUS_ICON = { erledigt: "✓", "in Arbeit": "▶", wartend: "⏸" };
 
-// 1 day steps up to +7, then calendar
+// Right swipe: +1..+7 days, then calendar
 const WIEDERVORLAGE_STEPS = [
   { label: "+1 Tag", days: 1 },
   { label: "+2 Tage", days: 2 },
@@ -14,12 +14,19 @@ const WIEDERVORLAGE_STEPS = [
   { label: "+5 Tage", days: 5 },
   { label: "+6 Tage", days: 6 },
   { label: "+7 Tage", days: 7 },
-  { label: "📅 Datum", days: null }, // calendar picker
+  { label: "📅 Kalender", days: null },
 ];
 
-const STEP_W = 34; // px per step
+// Left swipe stages: erledigt → archivieren → löschen
+const LEFT_STAGES = [
+  { threshold: 38,  label: "✓ Erledigt",    action: "done",    bg: "rgba(34,197,94,0.92)",  bg2: "rgba(16,185,129,0.88)" },
+  { threshold: 80,  label: "📦 Archivieren", action: "archive", bg: "rgba(245,158,11,0.92)", bg2: "rgba(217,119,6,0.88)" },
+  { threshold: 130, label: "🗑 Löschen",     action: "delete",  bg: "rgba(239,68,68,0.92)",  bg2: "rgba(220,38,38,0.88)" },
+];
+
+const STEP_W = 34;
 const MAX_RIGHT = WIEDERVORLAGE_STEPS.length * STEP_W + 10;
-const MAX_LEFT = 110;
+const MAX_LEFT = 150;
 
 function addDays(d) {
   const date = new Date();
@@ -38,7 +45,6 @@ function vibrate(p) {
   if (navigator.vibrate) navigator.vibrate(p);
 }
 
-// Done/Archive celebration animation
 function BurstAnimation({ onDone, color = "#22c55e" }) {
   const sparks = Array.from({ length: 14 }).map((_, i) => {
     const angle = (i / 14) * 360;
@@ -54,7 +60,6 @@ function BurstAnimation({ onDone, color = "#22c55e" }) {
 
   return (
     <div className="absolute inset-0 pointer-events-none z-20 flex items-center justify-center overflow-visible">
-      {/* Ripples */}
       {[0, 1, 2].map((i) => (
         <div key={i} className="absolute rounded-full" style={{
           border: `2px solid ${color}`,
@@ -62,7 +67,6 @@ function BurstAnimation({ onDone, color = "#22c55e" }) {
           opacity: 0,
         }} />
       ))}
-      {/* Sparks */}
       {sparks.map((s, i) => (
         <div key={i} className="absolute rounded-full" style={{
           width: s.size, height: s.size,
@@ -72,26 +76,11 @@ function BurstAnimation({ onDone, color = "#22c55e" }) {
           "--dy": `${s.dy}px`,
         }} />
       ))}
-      {/* Icon */}
-      <div className="absolute flex items-center justify-center" style={{
-        animation: "done-icon 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.1s both",
-        fontSize: 28,
-      }}>
-        ✓
-      </div>
+      <div className="absolute" style={{ animation: "done-icon 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.1s both", fontSize: 28 }}>✓</div>
       <style>{`
-        @keyframes burst-ripple {
-          0% { width: 20px; height: 20px; opacity: 0.8; }
-          100% { width: 100px; height: 100px; opacity: 0; }
-        }
-        @keyframes spark-fly {
-          0% { transform: translate(0,0) scale(1); opacity: 1; }
-          100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
-        }
-        @keyframes done-icon {
-          0% { transform: scale(0) rotate(-30deg); opacity: 0; }
-          100% { transform: scale(1) rotate(0deg); opacity: 1; }
-        }
+        @keyframes burst-ripple { 0% { width:20px;height:20px;opacity:0.8 } 100% { width:100px;height:100px;opacity:0 } }
+        @keyframes spark-fly { 0% { transform:translate(0,0) scale(1);opacity:1 } 100% { transform:translate(var(--dx),var(--dy)) scale(0);opacity:0 } }
+        @keyframes done-icon { 0% { transform:scale(0) rotate(-30deg);opacity:0 } 100% { transform:scale(1) rotate(0deg);opacity:1 } }
       `}</style>
     </div>
   );
@@ -102,13 +91,14 @@ export default function SwipeableTodoCard({ todo, onClick }) {
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
-  const [showBurst, setShowBurst] = useState(null); // "done" | "archive"
+  const [showBurst, setShowBurst] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
   const startX = useRef(0);
   const startY = useRef(0);
   const dx = useRef(0);
   const lockedStage = useRef(-1);
   const confirmTimer = useRef(null);
+  const isDirectional = useRef(null); // "h" | "v" | null
 
   // Auto-dismiss confirmation after 2.3s
   useEffect(() => {
@@ -127,26 +117,33 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     startY.current = e.touches[0].clientY;
     dx.current = 0;
     lockedStage.current = -1;
+    isDirectional.current = null;
     setDragging(false);
   };
 
   const onTouchMove = (e) => {
     if (confirmed || showBurst) return;
     const ddx = e.touches[0].clientX - startX.current;
-    const ddy = Math.abs(e.touches[0].clientY - startY.current);
-    if (!dragging && Math.abs(ddx) < 6) return;
-    if (!dragging && ddy > Math.abs(ddx)) return;
+    const ddy = e.touches[0].clientY - startY.current;
+
+    if (!isDirectional.current) {
+      if (Math.abs(ddx) < 5 && Math.abs(ddy) < 5) return;
+      isDirectional.current = Math.abs(ddx) >= Math.abs(ddy) ? "h" : "v";
+    }
+    if (isDirectional.current === "v") return;
+
     setDragging(true);
     dx.current = ddx;
 
     if (ddx < 0) {
-      // Left: done / delete
       const clamped = Math.max(ddx, -MAX_LEFT);
       setOffsetX(clamped);
-      const stage = Math.abs(clamped) > 70 ? 1 : Math.abs(clamped) > 30 ? 0 : -1;
+      const abs = Math.abs(clamped);
+      const stageIdx = LEFT_STAGES.findIndex((s) => abs < s.threshold);
+      const stage = stageIdx === -1 ? LEFT_STAGES.length - 1 : stageIdx;
       if (stage !== lockedStage.current) {
         lockedStage.current = stage;
-        if (stage >= 0) vibrate(stage === 0 ? 8 : [8, 20, 8]);
+        vibrate(stage === 0 ? 8 : stage === 1 ? [8, 20, 8] : [10, 30, 10, 30, 10]);
       }
     } else if (ddx > 0) {
       const stageIdx = Math.min(Math.floor(ddx / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
@@ -163,22 +160,26 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     if (confirmed || showBurst) return;
     setDragging(false);
     const d = dx.current;
+    isDirectional.current = null;
 
-    if (d < -70) {
-      setConfirmed({ action: "delete", label: "🗑 Löschen?" });
-      setOffsetX(0);
-    } else if (d < -28) {
-      setConfirmed({ action: "done", label: "✓ Erledigt?" });
+    if (d < -LEFT_STAGES[0].threshold) {
+      // Determine which left stage
+      const abs = Math.abs(d);
+      let picked = LEFT_STAGES[0];
+      for (const s of LEFT_STAGES) {
+        if (abs >= s.threshold) picked = s;
+      }
+      setConfirmed({ action: picked.action, label: `${picked.label}?`, bg: picked.bg, bg2: picked.bg2 });
       setOffsetX(0);
     } else if (d > STEP_W * 0.7) {
       const stageIdx = Math.min(Math.floor(d / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
       const step = WIEDERVORLAGE_STEPS[stageIdx];
       if (step.days === null) {
-        // Calendar picker
-        setShowCalendar(true);
+        // Show confirm overlay "Kalender öffnen"
+        setConfirmed({ action: "calendar", label: "📅 Kalender öffnen", bg: "rgba(99,102,241,0.92)", bg2: "rgba(139,92,246,0.88)", isCalendar: true });
         setOffsetX(0);
       } else {
-        setConfirmed({ action: "wiedervorlage", label: `📅 ${step.label}?`, days: step.days });
+        setConfirmed({ action: "wiedervorlage", label: `📅 ${step.label}?`, bg: "rgba(99,102,241,0.92)", bg2: "rgba(139,92,246,0.88)", days: step.days });
         setOffsetX(0);
       }
     } else {
@@ -190,19 +191,26 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
   const executeAction = async (action, days) => {
     clearTimeout(confirmTimer.current);
+
+    if (action === "calendar") {
+      setConfirmed(null);
+      setShowCalendar(true);
+      return;
+    }
+
     setConfirmed(null);
 
     if (action === "done") {
       setShowBurst("done");
       await updateTodo(user.uid, todo.id, { status: "erledigt" });
+    } else if (action === "archive") {
+      setShowBurst("archive");
+      await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
     } else if (action === "delete") {
       await deleteTodo(user.uid, todo.id);
     } else if (action === "wiedervorlage") {
       setShowBurst("wiedervorlage");
       await updateTodo(user.uid, todo.id, { wiedervorlage: addDays(days) });
-    } else if (action === "archive") {
-      setShowBurst("archive");
-      await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
     }
   };
 
@@ -216,6 +224,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
   };
 
   const handleCardClick = () => {
+    if (showCalendar) return;
     if (confirmed) {
       executeAction(confirmed.action, confirmed.days);
     } else if (!dragging) {
@@ -223,10 +232,12 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     }
   };
 
-  // Swipe indicator
+  // Visual indicators
   const rightStageIdx = offsetX > 0 ? Math.min(Math.floor(offsetX / STEP_W), WIEDERVORLAGE_STEPS.length - 1) : -1;
   const rightLabel = rightStageIdx >= 0 ? WIEDERVORLAGE_STEPS[rightStageIdx].label : null;
-  const leftIcon = offsetX < -70 ? "🗑" : offsetX < -28 ? "✓" : null;
+
+  const absLeft = Math.abs(Math.min(offsetX, 0));
+  const leftStage = LEFT_STAGES.reduce((acc, s) => (absLeft >= s.threshold ? s : acc), null);
 
   const isOverdue = todo.deadline && (() => {
     const d = todo.deadline.toDate ? todo.deadline.toDate() : new Date(todo.deadline);
@@ -235,7 +246,6 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
   return (
     <div className="relative overflow-hidden rounded-2xl" style={{ minHeight: 56 }}>
-      {/* Burst overlay */}
       {showBurst && (
         <BurstAnimation
           color={showBurst === "done" ? "#22c55e" : showBurst === "archive" ? "#f59e0b" : "#818cf8"}
@@ -243,21 +253,23 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         />
       )}
 
-      {/* Background hint - left */}
-      {offsetX < -20 && (
+      {/* Left background hint */}
+      {offsetX < -20 && leftStage && (
         <div className="absolute inset-0 flex items-center justify-end px-4 pointer-events-none"
-          style={{ background: offsetX < -70 ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.1)" }}>
-          <span className="text-lg">{offsetX < -70 ? "🗑" : "✓"}</span>
+          style={{ background: `linear-gradient(270deg, ${leftStage.bg2}, transparent)`, opacity: 0.15 + Math.min(absLeft / MAX_LEFT, 1) * 0.4 }}>
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-base">{leftStage.label.split(" ")[0]}</span>
+            <span className="text-[10px] font-bold text-white/80">{leftStage.label.slice(leftStage.label.indexOf(" ") + 1)}</span>
+          </div>
         </div>
       )}
 
-      {/* Background hint - right */}
+      {/* Right background hint */}
       {offsetX > 20 && rightLabel && (
         <div className="absolute inset-0 flex items-center justify-start px-4 pointer-events-none"
           style={{ background: "rgba(99,102,241,0.08)" }}>
-          <div className="flex flex-col items-start">
+          <div className="flex flex-col items-start gap-0.5">
             <span className="text-xs font-bold text-indigo-500">{rightLabel}</span>
-            {/* Step indicators */}
             <div className="flex gap-0.5 mt-0.5">
               {WIEDERVORLAGE_STEPS.map((_, i) => (
                 <div key={i} className="h-1 rounded-full transition-all" style={{
@@ -275,26 +287,27 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         <div onClick={() => executeAction(confirmed.action, confirmed.days)}
           className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl cursor-pointer"
           style={{
-            background: confirmed.action === "delete"
-              ? "linear-gradient(135deg, rgba(239,68,68,0.92), rgba(220,38,38,0.88))"
-              : confirmed.action === "done"
-              ? "linear-gradient(135deg, rgba(34,197,94,0.92), rgba(16,185,129,0.88))"
-              : "linear-gradient(135deg, rgba(99,102,241,0.92), rgba(139,92,246,0.88))",
+            background: `linear-gradient(135deg, ${confirmed.bg}, ${confirmed.bg2})`,
             backdropFilter: "blur(4px)",
           }}>
           <span className="text-white font-bold text-sm">{confirmed.label}</span>
-          <span className="text-white/70 text-[10px] mt-0.5">Tippen zum Bestätigen</span>
+          <span className="text-white/70 text-[10px] mt-0.5">
+            {confirmed.isCalendar ? "Tippen zum Öffnen" : "Tippen zum Bestätigen"}
+          </span>
         </div>
       )}
 
-      {/* Calendar picker */}
+      {/* Calendar picker overlay */}
       {showCalendar && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/95 backdrop-blur-sm shadow-lg border border-indigo-200">
-          <div className="flex flex-col items-center gap-2 p-4">
-            <span className="text-xs font-bold text-slate-600">Wiedervorlage-Datum</span>
-            <input type="date" className="px-3 py-1.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              onChange={handleCalendarChange} />
-            <button onClick={() => setShowCalendar(false)} className="text-[11px] text-slate-400 mt-1">Abbrechen</button>
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/96 backdrop-blur-md shadow-lg border border-indigo-200">
+          <div className="flex flex-col items-center gap-2.5 p-4">
+            <span className="text-xs font-bold text-slate-700">Wiedervorlage-Datum wählen</span>
+            <input type="date"
+              className="px-3 py-2 rounded-xl border border-indigo-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+              onChange={handleCalendarChange}
+              min={new Date().toISOString().split("T")[0]}
+            />
+            <button onClick={() => setShowCalendar(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Abbrechen</button>
           </div>
         </div>
       )}
@@ -314,14 +327,13 @@ export default function SwipeableTodoCard({ todo, onClick }) {
           userSelect: "none",
         }}
       >
-        {/* Prio dot */}
         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PRIO_DOT[todo.prio] || PRIO_DOT.B }} />
 
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-medium truncate ${todo.status === "erledigt" ? "line-through text-slate-400" : "text-slate-800"}`}>
             {todo.title}
           </p>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {todo.category && <span className="text-[10px] text-slate-400">{todo.category}</span>}
             {todo.deadline && (
               <span className={`text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
@@ -334,13 +346,11 @@ export default function SwipeableTodoCard({ todo, onClick }) {
           </div>
         </div>
 
-        {/* Prio badge */}
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${
           todo.prio === "A" ? "bg-red-100 text-red-600" : todo.prio === "C" ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"
         }`}>{todo.prio}</span>
 
-        {/* Status */}
-        <span className={`text-[11px] ${todo.status === "erledigt" ? "text-green-500" : "text-slate-400"}`}>
+        <span className={`text-[11px] flex-shrink-0 ${todo.status === "erledigt" ? "text-green-500" : "text-slate-400"}`}>
           {STATUS_ICON[todo.status] || "○"}
         </span>
       </div>

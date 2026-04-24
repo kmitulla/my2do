@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useFirebaseAuth } from "@/lib/firebaseAuth";
 
 const SORT_OPTIONS = [
   { value: "createdAt_desc", label: "Erstellt (neu)" },
@@ -19,8 +20,48 @@ const PRIO_BTN = {
   C: { active: "bg-emerald-500 text-white", base: "bg-slate-100 text-slate-600" },
 };
 
+function getPresetKey(uid) {
+  return `filter_presets_${uid}`;
+}
+
 export default function FilterBar({ filters, onFiltersChange, categories, sortBy, onSortChange }) {
+  const { user } = useFirebaseAuth();
   const [showFilters, setShowFilters] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
+  const [presets, setPresets] = useState([]);
+  const [newPresetName, setNewPresetName] = useState("");
+
+  // Load presets from localStorage
+  useEffect(() => {
+    if (!user?.uid) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem(getPresetKey(user.uid)) || "[]");
+      setPresets(stored);
+    } catch { setPresets([]); }
+  }, [user?.uid]);
+
+  const savePresets = (updated) => {
+    setPresets(updated);
+    if (user?.uid) localStorage.setItem(getPresetKey(user.uid), JSON.stringify(updated));
+  };
+
+  const handleSavePreset = () => {
+    const name = newPresetName.trim();
+    if (!name) return;
+    const preset = { name, filters, sortBy, id: Date.now() };
+    savePresets([...presets, preset]);
+    setNewPresetName("");
+  };
+
+  const handleLoadPreset = (preset) => {
+    onFiltersChange(preset.filters);
+    onSortChange(preset.sortBy);
+    setShowPresets(false);
+  };
+
+  const handleDeletePreset = (id) => {
+    savePresets(presets.filter((p) => p.id !== id));
+  };
 
   const toggleMulti = (key, value) => {
     const current = filters[key] || [];
@@ -35,7 +76,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
   const activeCount =
     (filters.statuses?.length || 0) +
     (filters.prios?.length || 0) +
-    (filters.category ? 1 : 0) +
+    (filters.categories?.length || 0) +
     (filters.showArchived ? 1 : 0) +
     (filters.wiedervorlageFilter ? 1 : 0);
 
@@ -46,7 +87,19 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
           className="flex-1 px-3 py-2 rounded-xl bg-white/70 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50">
           {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <button onClick={() => setShowFilters(!showFilters)}
+
+        {/* Presets button */}
+        <button onClick={() => { setShowPresets(!showPresets); setShowFilters(false); }}
+          className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1 ${
+            showPresets ? "bg-violet-500 text-white shadow-md" : "bg-white/70 border border-slate-200 text-slate-600"
+          }`} title="Filter-Presets">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+          {presets.length > 0 && <span className="text-xs">{presets.length}</span>}
+        </button>
+
+        <button onClick={() => { setShowFilters(!showFilters); setShowPresets(false); }}
           className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
             showFilters || activeCount > 0 ? "bg-blue-500 text-white shadow-md" : "bg-white/70 border border-slate-200 text-slate-600 hover:bg-white"
           }`}>
@@ -57,10 +110,54 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
         </button>
       </div>
 
+      {/* Presets panel */}
+      {showPresets && (
+        <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-3 shadow-sm">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Filter-Presets</p>
+
+          {/* Existing presets */}
+          {presets.length === 0 ? (
+            <p className="text-xs text-slate-400">Noch keine Presets gespeichert.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {presets.map((p) => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <button onClick={() => handleLoadPreset(p)}
+                    className="flex-1 text-left px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-xs font-medium hover:bg-violet-100 transition-all">
+                    <span className="font-semibold">{p.name}</span>
+                    <span className="ml-2 text-violet-400 font-normal">
+                      {SORT_OPTIONS.find(o => o.value === p.sortBy)?.label || p.sortBy}
+                    </span>
+                  </button>
+                  <button onClick={() => handleDeletePreset(p.id)}
+                    className="w-7 h-7 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-100 text-xs">
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Save current as preset */}
+          <div className="border-t border-slate-100 pt-2 flex gap-2">
+            <input value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
+              placeholder="Preset-Name…"
+              onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
+              className="flex-1 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-400/50" />
+            <button onClick={handleSavePreset} disabled={!newPresetName.trim()}
+              className="px-3 py-1.5 rounded-xl bg-violet-500 text-white text-xs font-semibold disabled:opacity-40">
+              Speichern
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-400">Aktuelle Filter + Sortierung werden gespeichert.</p>
+        </div>
+      )}
+
+      {/* Filter panel */}
       {showFilters && (
         <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-3">
 
-          {/* Status – multi-select */}
+          {/* Status */}
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
             <div className="flex flex-wrap gap-1.5">
@@ -79,7 +176,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
             </div>
           </div>
 
-          {/* Prio – multi-select */}
+          {/* Prio */}
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
             <div className="flex gap-1.5">
@@ -98,7 +195,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
             </div>
           </div>
 
-          {/* Category – multi-select */}
+          {/* Category */}
           {categories.length > 0 && (
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Kategorie <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
@@ -137,7 +234,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
             </div>
           </div>
 
-          {/* Archiv toggle */}
+          {/* Archiv */}
           <div className="flex items-center gap-2 pt-1">
             <button onClick={() => updateFilter("showArchived", !filters.showArchived)}
               className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${filters.showArchived ? "bg-blue-500 border-blue-500" : "border-slate-300"}`}>

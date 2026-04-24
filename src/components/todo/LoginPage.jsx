@@ -3,6 +3,8 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
 
 function LoginAnimation({ onDone }) {
   const [phase, setPhase] = useState(0);
+  // scanY: 0..100 (percent), active when phase>=4
+  const [scanY, setScanY] = useState(0);
 
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(1), 100);
@@ -10,9 +12,24 @@ function LoginAnimation({ onDone }) {
     const t3 = setTimeout(() => setPhase(3), 1000);
     const t4 = setTimeout(() => setPhase(4), 1800);
     const t5 = setTimeout(() => setPhase(5), 2400);
-    const t6 = setTimeout(() => onDone(), 3000);
+    const t6 = setTimeout(() => onDone(), 3050);
     return () => [t1, t2, t3, t4, t5, t6].forEach(clearTimeout);
   }, []);
+
+  // Animate scan line from top to bottom between phase 4 and 5
+  useEffect(() => {
+    if (phase !== 4) return;
+    setScanY(0);
+    const start = performance.now();
+    const dur = 600; // ms
+    const raf = (now) => {
+      const p = Math.min((now - start) / dur, 1);
+      setScanY(p * 100);
+      if (p < 1) requestAnimationFrame(raf);
+    };
+    const id = requestAnimationFrame(raf);
+    return () => cancelAnimationFrame(id);
+  }, [phase]);
 
   const bars = Array.from({ length: 16 });
 
@@ -63,6 +80,32 @@ function LoginAnimation({ onDone }) {
         opacity: phase >= 2 ? 1 : 0,
         transition: "opacity 0.5s ease 0.2s",
       }} />
+
+      {/* Scan reveal: app background appears behind the scan line as it falls */}
+      {phase >= 4 && (
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 5 }}>
+          {/* App bg revealed above the scan line (curtain pulling down) */}
+          <div style={{
+            position: "absolute",
+            top: 0, left: 0, right: 0,
+            height: `${scanY}%`,
+            background: "linear-gradient(135deg, #e0e7ff 0%, #dbeafe 50%, #e0f2fe 100%)",
+            filter: "blur(6px)",
+            opacity: 0.85,
+            transition: "none",
+          }} />
+          {/* Scan line itself */}
+          <div style={{
+            position: "absolute",
+            top: `${scanY}%`,
+            left: 0, right: 0,
+            height: "3px",
+            background: "linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.2) 10%, rgba(167,139,250,1) 40%, rgba(56,189,248,1) 60%, rgba(167,139,250,1) 90%, transparent 100%)",
+            boxShadow: "0 0 24px rgba(167,139,250,0.9), 0 0 60px rgba(99,102,241,0.5)",
+            transition: "none",
+          }} />
+        </div>
+      )}
 
       {/* EQ bars - data visualization feel */}
       <div className="absolute bottom-16 flex items-end gap-0.5" style={{

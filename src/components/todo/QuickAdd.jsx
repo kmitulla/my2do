@@ -9,20 +9,34 @@ const PRIO_BASE = {
   C: { bg: "bg-green-100", text: "text-green-600", ring: "ring-green-400", glow: "rgba(34,197,94,0.5)" },
 };
 
-function PulseButton({ label, active, color, onClick }) {
-  const animId = useRef(`pulse_${Math.random().toString(36).slice(2)}`);
-  const [tick, setTick] = useState(0);
+// Shared pulse tick — all buttons pulse together
+let _sharedTick = 0;
+const _listeners = new Set();
+function startSharedPulse() {
+  const schedule = () => {
+    // Irregular but shared: 1.5s–3.5s
+    const delay = 1500 + Math.random() * 2000;
+    setTimeout(() => {
+      _sharedTick++;
+      _listeners.forEach((fn) => fn(_sharedTick));
+      schedule();
+    }, delay);
+  };
+  schedule();
+}
+startSharedPulse();
 
-  // Random irregular pulse timing
+function usePulseTick() {
+  const [tick, setTick] = useState(_sharedTick);
   useEffect(() => {
-    let timeout;
-    const schedule = () => {
-      const delay = 1200 + Math.random() * 2800;
-      timeout = setTimeout(() => { setTick((t) => t + 1); schedule(); }, delay);
-    };
-    schedule();
-    return () => clearTimeout(timeout);
+    _listeners.add(setTick);
+    return () => _listeners.delete(setTick);
   }, []);
+  return tick;
+}
+
+function PulseButton({ label, active, color, onClick }) {
+  const tick = usePulseTick();
 
   return (
     <button
@@ -34,7 +48,7 @@ function PulseButton({ label, active, color, onClick }) {
       }`}
       style={active ? { boxShadow: `0 0 12px ${color.glow}, 0 2px 8px rgba(0,0,0,0.08)` } : {}}
     >
-      {/* Pulse ring */}
+      {/* Sync pulse ring */}
       <span
         key={tick}
         className="absolute inset-0 rounded-lg pointer-events-none"
