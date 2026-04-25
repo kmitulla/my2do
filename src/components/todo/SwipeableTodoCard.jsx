@@ -201,26 +201,23 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     const d = dx.current;
     isDirectional.current = null;
 
+    // Reset isDragging after a short delay so click handler sees it correctly
+    setTimeout(() => { isDragging.current = false; }, 50);
+
     if (d < -LEFT_STAGES[0].threshold) {
       const abs = Math.abs(d);
       let picked = LEFT_STAGES[0];
       for (const s of LEFT_STAGES) { if (abs >= s.threshold) picked = s; }
-      // Show confirmation overlay for ALL left-swipe actions
       setConfirmed({ action: picked.action, label: picked.label, bg: picked.bg, bg2: picked.bg2, Icon: picked.Icon });
       setOffsetX(0);
     } else if (d > STEP_W * 0.7) {
       const stageIdx = Math.min(Math.floor(d / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
       const step = WIEDERVORLAGE_STEPS[stageIdx];
-      // Confirm for +7, direct save for others
-      if (step.days === 7) {
-        setConfirmed({ action: "wiedervorlage7", label: "+7 Tage Wiedervorlage", bg: "rgba(99,102,241,0.92)", bg2: "rgba(79,70,229,0.88)", Icon: null });
-        setOffsetX(0);
-      } else {
-        const newDate = addDays(step.days);
-        setOffsetX(0);
-        setShowBurst("wiedervorlage");
-        updateTodo(user.uid, todo.id, { wiedervorlage: newDate });
-      }
+      // Alle Wiedervorlage-Schritte direkt speichern (kein extra Confirm)
+      const newDate = addDays(step.days);
+      setOffsetX(0);
+      setShowBurst("wiedervorlage");
+      updateTodo(user.uid, todo.id, { wiedervorlage: newDate });
     } else {
       setOffsetX(0);
     }

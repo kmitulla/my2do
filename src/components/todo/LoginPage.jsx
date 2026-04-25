@@ -7,12 +7,12 @@ function LoginAnimation({ onDone }) {
   const [scanY, setScanY] = useState(0);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase(1), 100);
-    const t2 = setTimeout(() => setPhase(2), 500);
-    const t3 = setTimeout(() => setPhase(3), 1000);
-    const t4 = setTimeout(() => setPhase(4), 1800);
-    const t5 = setTimeout(() => setPhase(5), 2400);
-    const t6 = setTimeout(() => onDone(), 3050);
+    const t1 = setTimeout(() => setPhase(1), 50);
+    const t2 = setTimeout(() => setPhase(2), 200);
+    const t3 = setTimeout(() => setPhase(3), 400);
+    const t4 = setTimeout(() => setPhase(4), 600);
+    const t5 = setTimeout(() => setPhase(5), 800);
+    const t6 = setTimeout(() => onDone(), 1000);
     return () => [t1, t2, t3, t4, t5, t6].forEach(clearTimeout);
   }, []);
 
