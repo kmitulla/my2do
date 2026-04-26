@@ -15,12 +15,15 @@ export default function AICreateTodo({ categories, onCreated, onClose }) {
     setLoading(true);
     setError("");
     try {
-      const systemPrompt = `Du bist ein Aufgaben-Assistent. Extrahiere aus dem Text strukturierte Aufgaben-Daten auf Deutsch.
+      const today = new Date().toISOString().split("T")[0];
+      const systemPrompt = `Du bist ein Aufgaben-Assistent. Heute ist ${today}.
+Extrahiere aus dem folgenden Text ALLE Informationen und erstelle eine strukturierte Aufgabe auf Deutsch.
+WICHTIG: Gehe kein Detail verloren! Schreibe alles Relevante in die Beschreibung, auch wenn es viel ist.
 Antworte ausschliesslich mit einem validen JSON-Objekt mit diesen Feldern:
-- title: string (kurzer Titel)
-- description: string (ausfuehrliche Beschreibung)
-- prio: string (genau "A", "B" oder "C")
-- deadline: string im Format YYYY-MM-DDTHH:mm oder null
+- title: string (praegnanter Titel, max 80 Zeichen)
+- description: string (AUSFUEHRLICHE HTML-Beschreibung mit allen Details, Kontext, Personen, Hintergruenden etc. Nutze <br> fuer Zeilenumbrueche und <b> fuer wichtige Begriffe. Lass NICHTS weg.)
+- prio: string (genau "A" fuer dringend/wichtig, "B" fuer normal, "C" fuer niedrig)
+- deadline: string im Format YYYY-MM-DDTHH:mm (berechne relativ zu heute ${today}) oder null
 - wiedervorlage: string im Format YYYY-MM-DDTHH:mm oder null
 - status: string (immer "offen")
 - category: string (leer wenn nicht erwaehnt)

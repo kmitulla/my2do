@@ -334,61 +334,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender</p>
           </div>
 
-          {/* Share Section */}
-          <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              Notiz teilen
-            </label>
-            {!showShare ? (
-              <button onClick={loadUsers}
-                className="w-full py-2.5 rounded-2xl bg-violet-50 border border-violet-200 text-violet-600 text-sm font-medium hover:bg-violet-100 transition-all flex items-center justify-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                Notiz an User senden
-              </button>
-            ) : (
-              <div className="space-y-3">
-                {/* User list */}
-                <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                  {allUsers.length === 0 && <p className="text-xs text-slate-400">Keine anderen User gefunden.</p>}
-                  {allUsers.map((u) => (
-                    <button key={u.id} onClick={() => toggleUser(u.id)}
-                      className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-all ${selectedUids.includes(u.id) ? "bg-violet-500 text-white" : "bg-slate-100 text-slate-700"}`}>
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedUids.includes(u.id) ? "bg-white/20 text-white" : "bg-violet-200 text-violet-600"}`}>
-                        {(u.displayName || u.email || "?")[0].toUpperCase()}
-                      </div>
-                      <div className="text-left flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{u.displayName || "–"}</p>
-                        <p className={`text-[10px] truncate ${selectedUids.includes(u.id) ? "text-white/70" : "text-slate-400"}`}>{u.email}</p>
-                      </div>
-                      {selectedUids.includes(u.id) && <span className="text-white text-sm">✓</span>}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Collaborate toggle */}
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 border border-purple-200">
-                  <button onClick={() => setCollaborate(!collaborate)}
-                    className={`w-10 h-6 rounded-full transition-all relative ${collaborate ? "bg-purple-500" : "bg-slate-300"}`}>
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${collaborate ? "left-5" : "left-1"}`} />
-                  </button>
-                  <div>
-                    <p className="text-xs font-semibold text-purple-700">Zusammenarbeit</p>
-                    <p className="text-[10px] text-purple-400">Beide können die Notiz bearbeiten</p>
-                  </div>
-                </div>
-
-                {shareSuccess ? (
-                  <div className="py-2.5 text-center text-emerald-600 text-sm font-medium">✓ Gesendet!</div>
-                ) : (
-                  <button onClick={handleShare} disabled={sharing || selectedUids.length === 0}
-                    className="w-full py-2.5 rounded-2xl bg-violet-500 text-white text-sm font-semibold disabled:opacity-40">
-                    {sharing ? "Sende..." : `An ${selectedUids.length > 0 ? selectedUids.length : ""} User senden`}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          {/* Share Section — temporarily hidden */}
+          {/* <div className="border-t border-slate-100 pt-4"> ... </div> */}
         </div>
 
         {/* Footer */}

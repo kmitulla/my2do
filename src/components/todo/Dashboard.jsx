@@ -39,14 +39,14 @@ function sortTodos(todos, sortBy) {
 function applyWiedervorlageFilter(todos, wFilter) {
   if (!wFilter) return todos;
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+  const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
   return todos.filter((t) => {
     if (!t.wiedervorlage) return true; // no wiedervorlage → always show
     const d = t.wiedervorlage.toDate ? t.wiedervorlage.toDate() : new Date(t.wiedervorlage);
-    if (wFilter === "hide_future") return d <= tomorrow;
-    if (wFilter === "only_today") { const dd = new Date(d); dd.setHours(0,0,0,0); return dd.getTime() === now.getTime(); }
-    if (wFilter === "only_past") return d < now;
+    if (wFilter === "hide_future") return d <= todayEnd; // nur heute oder vergangen anzeigen
+    if (wFilter === "only_today") { const dd = new Date(d); dd.setHours(0,0,0,0); return dd.getTime() === todayStart.getTime(); }
+    if (wFilter === "only_past") return d < todayStart;
     return true;
   });
 }
@@ -62,9 +62,8 @@ export default function Dashboard() {
   const [selectedTodo, setSelectedTodo] = useState(null);
   const [view, setView] = useState(() => localStorage.getItem(LS_VIEW) || "list");
   const [sortBy, setSortBy] = useState(() => localStorage.getItem(LS_SORT) || "createdAt_desc");
-  const [filters, setFilters] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(LS_FILTERS)) || defaultFilters; } catch { return defaultFilters; }
-  });
+  const [filters, setFilters] = useState(defaultFilters);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
   const [search, setSearch] = useState("");
   const [showAI, setShowAI] = useState(false);
 
@@ -75,9 +74,30 @@ export default function Dashboard() {
     return () => { unsub1(); unsub2(); unsub3(); };
   }, [user.uid]);
 
-  const handleSortChange = (v) => { setSortBy(v); localStorage.setItem(LS_SORT, v); };
+  // Load persisted filters + sort from localStorage (instant) — already handled in useState init above
+  // Persist filters to localStorage on change
+  useEffect(() => {
+    if (!filtersLoaded) return;
+    localStorage.setItem(LS_FILTERS, JSON.stringify(filters));
+    localStorage.setItem(LS_SORT, sortBy);
+  }, [filters, sortBy, filtersLoaded]);
+
+  // Load from localStorage once on mount
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(LS_FILTERS));
+      if (saved) setFilters(saved);
+    } catch {}
+    try {
+      const savedSort = localStorage.getItem(LS_SORT);
+      if (savedSort) setSortBy(savedSort);
+    } catch {}
+    setFiltersLoaded(true);
+  }, []);
+
+  const handleSortChange = (v) => { setSortBy(v); };
   const handleViewChange = (v) => { setView(v); localStorage.setItem(LS_VIEW, v); };
-  const handleFiltersChange = (f) => { setFilters(f); localStorage.setItem(LS_FILTERS, JSON.stringify(f)); };
+  const handleFiltersChange = (f) => { setFilters(f); };
 
   // searchAll: when active, ignore ALL filters and search archived+non-archived
   const [searchAll, setSearchAll] = useState(false);

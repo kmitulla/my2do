@@ -4,13 +4,13 @@ export default function SplashScreen({ onDone }) {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase(1), 150);   // icon drops in
-    const t2 = setTimeout(() => setPhase(2), 500);   // rings + particles
-    const t3 = setTimeout(() => setPhase(3), 900);   // text
-    const t4 = setTimeout(() => setPhase(4), 1700);  // glitch flash
-    const t5 = setTimeout(() => setPhase(5), 2100);  // scan line
-    const t6 = setTimeout(() => setPhase(6), 2800);  // fade out
-    const t7 = setTimeout(() => onDone?.(), 3200);
+    const t1 = setTimeout(() => setPhase(1), 50);    // icon drops in
+    const t2 = setTimeout(() => setPhase(2), 200);   // rings + particles
+    const t3 = setTimeout(() => setPhase(3), 350);   // text
+    const t4 = setTimeout(() => setPhase(4), 550);   // glitch flash
+    const t5 = setTimeout(() => setPhase(5), 650);   // scan line
+    const t6 = setTimeout(() => setPhase(6), 800);   // fade out
+    const t7 = setTimeout(() => onDone?.(), 1000);
     return () => [t1, t2, t3, t4, t5, t6, t7].forEach(clearTimeout);
   }, []);
 
