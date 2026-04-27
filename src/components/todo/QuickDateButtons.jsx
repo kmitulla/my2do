@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React from "react";
 import { format } from "date-fns";
 
 // Quick +N day buttons + calendar icon for date picking
@@ -6,8 +6,6 @@ import { format } from "date-fns";
 // onChange: (Date | null) => void
 // withTime: if true, shows datetime-local (for deadline)
 export default function QuickDateButtons({ value, onChange, withTime = false }) {
-  const inputRef = useRef(null);
-
   const toDate = (v) => {
     if (!v) return null;
     if (v?.toDate) return v.toDate();
@@ -34,15 +32,6 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
     return format(d, "yyyy-MM-dd'T'HH:mm");
   };
 
-  const openPicker = () => {
-    if (!inputRef.current) return;
-    try {
-      inputRef.current.showPicker();
-    } catch {
-      inputRef.current.click();
-    }
-  };
-
   const DAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
   return (
@@ -59,23 +48,32 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
           </button>
         ))}
 
-        {/* Hidden input + button that calls showPicker() — works on all browsers incl. PC */}
+        {/* 
+          Overlay-Technik: Der echte Input liegt transparent ÜBER dem Emoji-Button.
+          Das ist der einzige zuverlässige Weg für native Datepicker in Browsern/iframes.
+          pointerEvents auf dem Input MUSS "auto" bleiben — nur opacity:0.
+        */}
         <div className="relative">
+          <span
+            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 transition-all cursor-pointer select-none inline-flex items-center"
+            aria-hidden="true"
+          >
+            📅
+          </span>
           <input
-            ref={inputRef}
             type={withTime ? "datetime-local" : "date"}
             value={withTime ? toInputVal(current) : (current ? format(current, "yyyy-MM-dd") : "")}
             onChange={handleInput}
-            style={{ position: "absolute", opacity: 0, width: "1px", height: "1px", top: 0, left: 0, pointerEvents: "none" }}
-            tabIndex={-1}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              opacity: 0,
+              cursor: "pointer",
+              zIndex: 1,
+            }}
           />
-          <button
-            type="button"
-            onClick={openPicker}
-            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 transition-all active:scale-95 cursor-pointer"
-          >
-            📅
-          </button>
         </div>
 
         {current && (
