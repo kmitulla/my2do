@@ -1,4 +1,4 @@
-import React, { useId } from "react";
+import React, { useRef } from "react";
 import { format } from "date-fns";
 
 // Quick +N day buttons + calendar icon for date picking
@@ -6,7 +6,7 @@ import { format } from "date-fns";
 // onChange: (Date | null) => void
 // withTime: if true, shows datetime-local (for deadline)
 export default function QuickDateButtons({ value, onChange, withTime = false }) {
-  const inputId = useId();
+  const inputRef = useRef(null);
 
   const toDate = (v) => {
     if (!v) return null;
@@ -34,6 +34,15 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
     return format(d, "yyyy-MM-dd'T'HH:mm");
   };
 
+  const openPicker = () => {
+    if (!inputRef.current) return;
+    try {
+      inputRef.current.showPicker();
+    } catch {
+      inputRef.current.click();
+    }
+  };
+
   const DAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
   return (
@@ -50,20 +59,24 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
           </button>
         ))}
 
-        {/* Calendar picker: label wraps a visible input so click works in iframes */}
-        <label
-          htmlFor={inputId}
-          className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 transition-all active:scale-95 cursor-pointer select-none"
-        >
-          📅
+        {/* Hidden input + button that calls showPicker() — works on all browsers incl. PC */}
+        <div className="relative">
           <input
-            id={inputId}
+            ref={inputRef}
             type={withTime ? "datetime-local" : "date"}
             value={withTime ? toInputVal(current) : (current ? format(current, "yyyy-MM-dd") : "")}
             onChange={handleInput}
-            style={{ position: "absolute", opacity: 0, width: 0, height: 0, pointerEvents: "none" }}
+            style={{ position: "absolute", opacity: 0, width: "1px", height: "1px", top: 0, left: 0, pointerEvents: "none" }}
+            tabIndex={-1}
           />
-        </label>
+          <button
+            type="button"
+            onClick={openPicker}
+            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 transition-all active:scale-95 cursor-pointer"
+          >
+            📅
+          </button>
+        </div>
 
         {current && (
           <button
