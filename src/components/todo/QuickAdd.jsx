@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { addTodo } from "@/lib/todoService";
+import EmailDropModal from "./EmailDropModal";
 
 const PRIOS = ["A", "B", "C"];
 const PRIO_BASE = {
@@ -74,6 +75,23 @@ const IconPlus = () => (
   </svg>
 );
 
+// Parse a dragged .eml / .msg text or HTML blob from Outlook
+function parseEmailText(text) {
+  const header = (name) => {
+    const m = text.match(new RegExp(`^${name}:\\s*(.+)$`, "im"));
+    return m ? m[1].trim() : "";
+  };
+  const subject = header("Subject") || header("Betreff");
+  const from    = header("From")    || header("Von");
+  const to      = header("To")      || header("An");
+  const cc      = header("Cc")      || header("CC");
+  const date    = header("Date")    || header("Datum");
+  // Body: everything after the first blank line after headers
+  const bodyMatch = text.match(/\r?\n\r?\n([\s\S]*)/);
+  const body = bodyMatch ? bodyMatch[1].trim().replace(/\n/g, "<br>") : "";
+  return { subject, from, to, cc, date, body };
+}
+
 export default function QuickAdd({ categories, onCreated }) {
   const { user } = useFirebaseAuth();
   const [title, setTitle] = useState("");
@@ -83,9 +101,44 @@ export default function QuickAdd({ categories, onCreated }) {
   const [loading, setLoading] = useState(false);
   const [typing, setTyping] = useState(false);
   const [particles, setParticles] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [emailParsed, setEmailParsed] = useState(null);
   const inputRef = useRef(null);
   const typingTimer = useRef(null);
   const particleId = useRef(0);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+  const handleDragLeave = () => setDragOver(false);
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const dt = e.dataTransfer;
+
+    // Try .eml / .msg file first
+    const files = Array.from(dt.files || []);
+    const emailFile = files.find((f) =>
+      f.name.endsWith(".eml") || f.name.endsWith(".msg") || f.type === "message/rfc822"
+    );
+    if (emailFile) {
+      const text = await emailFile.text();
+      setEmailParsed(parseEmailText(text));
+      return;
+    }
+
+    // Outlook drag gives text/plain with full RFC 2822 headers
+    const plain = dt.getData("text/plain");
+    if (plain && (plain.includes("Subject:") || plain.includes("From:") || plain.includes("Betreff:"))) {
+      setEmailParsed(parseEmailText(plain));
+      return;
+    }
+
+    // Fallback: treat dropped text as title
+    if (plain) setTitle(plain.substring(0, 120));
+  };
 
   const handleChange = (e) => {
     setTitle(e.target.value);
@@ -149,9 +202,30 @@ export default function QuickAdd({ categories, onCreated }) {
   const hasText = title.trim().length > 0;
 
   return (
-    <div className="space-y-2.5">
+    <div
+      className="space-y-2.5"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {emailParsed && (
+        <EmailDropModal
+          parsed={emailParsed}
+          onCreated={onCreated}
+          onClose={() => setEmailParsed(null)}
+        />
+      )}
+
       {/* Input row */}
-      <div className="flex gap-2 items-center relative">
+      <div
+        className="flex gap-2 items-center relative rounded-xl transition-all"
+        style={dragOver ? { boxShadow: "0 0 0 2px #6366f1, 0 0 20px rgba(99,102,241,0.25)" } : {}}
+      >
+        {dragOver && (
+          <div className="absolute inset-0 rounded-xl bg-indigo-50/80 border-2 border-dashed border-indigo-400 flex items-center justify-center z-10 pointer-events-none">
+            <span className="text-indigo-500 text-xs font-semibold">📧 E-Mail als Notiz ablegen</span>
+          </div>
+        )}
         <div className="absolute inset-0 pointer-events-none overflow-visible z-10">
           {particles.map((p) => <InputParticle key={p.id} x={p.x} y={p.y} color={p.color} />)}
         </div>

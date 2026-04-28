@@ -79,6 +79,12 @@ function formatDate(ts) {
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 }
 
+function formatCreatedAt(ts) {
+  if (!ts) return null;
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
 function vibrate(p) {
   if (navigator.vibrate) navigator.vibrate(p);
 }
@@ -372,6 +378,11 @@ export default function SwipeableTodoCard({ todo, onClick }) {
             {todo.wiedervorlage && (
               <span className="flex items-center gap-0.5 text-[10px] text-indigo-400">
                 <IconClock />{formatDate(todo.wiedervorlage)}
+              </span>
+            )}
+            {todo.createdAt && (
+              <span className="text-[10px] text-slate-300 ml-auto">
+                {formatCreatedAt(todo.createdAt)}
               </span>
             )}
           </div>
