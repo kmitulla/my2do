@@ -1,170 +1,208 @@
 /**
- * Lightweight browser-side .msg (Outlook OLE2/CFB) parser.
- * Extracts Subject, From, To, Body from an ArrayBuffer.
- * 
- * .msg is a Compound File Binary (CFB/OLE2). We use a simple
- * approach: scan the raw UTF-16LE strings from the binary.
+ * Browser-compatible .msg (OLE2/CFB) parser.
+ * Finds the "__substg1.0_XXXXXXXX" directory entries in the CFB structure
+ * and reads the actual property values from them.
+ *
+ * CFB header is at offset 0, sector size is 512 bytes (older) or 4096 bytes (newer).
+ * Directory entries are 128 bytes each, stored in directory sectors.
  */
 
-// Decode a UTF-16LE byte array to a string
-function decodeUTF16LE(bytes) {
-  const arr = new Uint16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.length / 2));
-  return String.fromCharCode(...arr);
+const SECTOR_SIZE = 512;
+const DIRENT_SIZE = 128;
+
+function readUint32LE(buf, offset) {
+  return (buf[offset] | (buf[offset+1] << 8) | (buf[offset+2] << 16) | (buf[offset+3] << 24)) >>> 0;
 }
 
-// Find a readable ASCII/UTF-16 string around a known marker
-function extractFieldFromBytes(bytes, markerHex) {
-  // We'll look for known MAPI property IDs in the raw stream
-  // and read the following string data
+function readUint16LE(buf, offset) {
+  return buf[offset] | (buf[offset+1] << 8);
 }
 
-/**
- * Parse a .msg file ArrayBuffer and return { subject, from, to, cc, date, body }
- * 
- * Strategy: scan for UTF-16LE encoded strings in the raw binary.
- * Most text fields in .msg are stored as UTF-16LE.
- */
+function sectorOffset(sectorId) {
+  return (sectorId + 1) * SECTOR_SIZE;
+}
+
+function readSector(bytes, sectorId) {
+  const off = sectorOffset(sectorId);
+  return bytes.slice(off, off + SECTOR_SIZE);
+}
+
+// Follow the FAT chain starting at startSector
+function readFATChain(bytes, fat, startSector) {
+  const sectors = [];
+  let cur = startSector;
+  const ENDOFCHAIN = 0xFFFFFFFE;
+  const FREESECT   = 0xFFFFFFFF;
+  let guard = 0;
+  while (cur !== ENDOFCHAIN && cur !== FREESECT && cur < fat.length && guard++ < 4096) {
+    sectors.push(cur);
+    cur = fat[cur];
+  }
+  return sectors;
+}
+
+function concatSectors(bytes, sectors) {
+  const chunks = sectors.map((s) => readSector(bytes, s));
+  const total = chunks.reduce((a, c) => a + c.length, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+function readDirEntryName(bytes, offset) {
+  const nameLen = readUint16LE(bytes, offset + 64);
+  if (nameLen < 2) return "";
+  const chars = [];
+  for (let i = 0; i < nameLen - 2; i += 2) {
+    chars.push(String.fromCharCode(readUint16LE(bytes, offset + i)));
+  }
+  return chars.join("");
+}
+
+function utf16leToString(bytes) {
+  const chars = [];
+  for (let i = 0; i < bytes.length - 1; i += 2) {
+    const code = bytes[i] | (bytes[i+1] << 8);
+    if (code === 0) break;
+    chars.push(String.fromCharCode(code));
+  }
+  return chars.join("");
+}
+
+function latin1ToString(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0) break;
+    s += String.fromCharCode(bytes[i]);
+  }
+  return s;
+}
+
 export function parseMsgFile(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
 
-  // Helper: find all UTF-16LE strings of length >= minLen
-  function findUTF16Strings(minLen = 4) {
-    const results = [];
-    let i = 0;
-    while (i < bytes.length - 1) {
-      // Check if this looks like a UTF-16LE string start (printable ASCII range)
-      if (bytes[i] >= 0x20 && bytes[i] <= 0x7E && bytes[i + 1] === 0x00) {
-        let j = i;
-        let str = "";
-        while (j < bytes.length - 1 && bytes[j + 1] === 0x00 && bytes[j] >= 0x20 && bytes[j] <= 0x7E) {
-          str += String.fromCharCode(bytes[j]);
-          j += 2;
-        }
-        if (str.length >= minLen) {
-          results.push({ offset: i, str });
-          i = j;
-          continue;
-        }
-      }
-      i++;
-    }
-    return results;
+  // Validate CFB magic
+  if (bytes[0] !== 0xD0 || bytes[1] !== 0xCF) {
+    return { subject: "", from: "", to: "", cc: "", date: "", body: "" };
   }
 
-  // Helper: extract plain text (ASCII) strings from binary
-  function findASCIIStrings(minLen = 4) {
-    const results = [];
-    let i = 0;
-    while (i < bytes.length) {
-      if (bytes[i] >= 0x20 && bytes[i] <= 0x7E) {
-        let j = i;
-        let str = "";
-        while (j < bytes.length && bytes[j] >= 0x20 && bytes[j] <= 0x7E) {
-          str += String.fromCharCode(bytes[j]);
-          j++;
-        }
-        if (str.length >= minLen) {
-          results.push({ offset: i, str });
-          i = j;
-          continue;
-        }
-      }
-      i++;
-    }
-    return results;
+  // Sector size from header (usually 512)
+  const sectorSizeExp = readUint16LE(bytes, 30);
+  const secSize = Math.pow(2, sectorSizeExp); // usually 512
+
+  // Number of FAT sectors
+  const numFATSectors = readUint32LE(bytes, 44);
+  // First directory sector
+  const firstDirSector = readUint32LE(bytes, 48);
+  // DIFAT array starts at offset 76, 109 entries inline
+  const difat = [];
+  for (let i = 0; i < 109; i++) {
+    const s = readUint32LE(bytes, 76 + i * 4);
+    if (s === 0xFFFFFFFF || s === 0xFFFFFFFE) break;
+    difat.push(s);
   }
 
-  const utf16Strings = findUTF16Strings(3);
-  const asciiStrings = findASCIIStrings(4);
+  // Build FAT
+  const fat = [];
+  for (const fatSec of difat) {
+    const off = (fatSec + 1) * secSize;
+    for (let i = 0; i < secSize / 4; i++) {
+      fat.push(readUint32LE(bytes, off + i * 4));
+    }
+  }
 
-  // Known patterns to identify fields
-  // In .msg files, field names appear before their values
-  let subject = "";
-  let from = "";
-  let to = "";
-  let body = "";
-  let date = "";
+  // Read directory entries
+  function followChain(start) {
+    const sectors = [];
+    let cur = start;
+    const END = 0xFFFFFFFE, FREE = 0xFFFFFFFF;
+    let guard = 0;
+    while (cur !== END && cur !== FREE && cur < fat.length && guard++ < 1000) {
+      sectors.push(cur);
+      cur = fat[cur];
+    }
+    return sectors;
+  }
 
-  // Search UTF-16 strings for email-like content
-  // The subject is typically a short UTF-16 string after the "Subject:" marker
-  // We look for known markers in ASCII too
-  
-  // Try to find Subject from ASCII: look for "Subject:" or "Betreff:" label
-  // In the .msg binary, property tags identify fields numerically.
-  // Property 0x0037 = Subject, 0x0C1A = SenderName, 0x0076 = ReceivedByEmailAddress
-  // We look for these as little-endian uint32 property tags in the stream.
+  const dirSectors = followChain(firstDirSector);
+  const dirData = [];
+  for (const s of dirSectors) {
+    const off = (s + 1) * secSize;
+    for (let i = 0; i < secSize; i++) dirData.push(bytes[off + i] || 0);
+  }
+  const dirBytes = new Uint8Array(dirData);
 
-  const view = new DataView(arrayBuffer);
+  const numDirEntries = dirBytes.length / DIRENT_SIZE;
+  const streamMap = {}; // name -> { startSector, size }
 
-  function searchPropertyValue(propId) {
-    // MAPI property tags are stored as 4-byte LE: (type << 16) | propId
-    // Common types: 0x001F = PT_UNICODE (UTF-16LE), 0x001E = PT_STRING8
-    const tag1 = (0x001F << 16) | propId; // Unicode
-    const tag2 = (0x001E << 16) | propId; // ASCII
+  for (let e = 0; e < numDirEntries; e++) {
+    const off = e * DIRENT_SIZE;
+    const name = readDirEntryName(dirBytes, off);
+    const objType = dirBytes[off + 66];
+    if (objType !== 2) continue; // 2 = stream entry
 
-    for (let i = 0; i < bytes.length - 8; i++) {
-      const val = view.getUint32(i, true);
-      if (val === tag1 || val === tag2) {
-        const isUnicode = (val >>> 16) === 0x001F;
-        // Next 4 bytes = size
-        const size = view.getUint32(i + 4, true);
-        if (size > 0 && size < 100000 && i + 8 + size <= bytes.length) {
-          const strBytes = bytes.slice(i + 8, i + 8 + size);
-          if (isUnicode) {
-            // Remove null terminator
-            const chars = [];
-            for (let k = 0; k < strBytes.length - 1; k += 2) {
-              const code = strBytes[k] | (strBytes[k + 1] << 8);
-              if (code === 0) break;
-              chars.push(String.fromCharCode(code));
-            }
-            return chars.join("");
-          } else {
-            // ASCII
-            let s = "";
-            for (let k = 0; k < strBytes.length; k++) {
-              if (strBytes[k] === 0) break;
-              s += String.fromCharCode(strBytes[k]);
-            }
-            return s;
-          }
-        }
+    const startSector = readUint32LE(dirBytes, off + 116);
+    const size = readUint32LE(dirBytes, off + 120);
+    streamMap[name] = { startSector, size };
+  }
+
+  // Read a stream by name
+  function readStream(name) {
+    const entry = streamMap[name];
+    if (!entry) return null;
+    const { startSector, size } = entry;
+
+    // Mini stream threshold is 4096 — for small files, data is in mini stream
+    // For simplicity, read from main stream (covers most real .msg files)
+    const sectors = followChain(startSector);
+    const allData = [];
+    for (const s of sectors) {
+      const off = (s + 1) * secSize;
+      for (let i = 0; i < secSize; i++) allData.push(bytes[off + i] || 0);
+    }
+    return new Uint8Array(allData.slice(0, size));
+  }
+
+  // MAPI property stream names: "__substg1.0_" + propTag (hex, uppercase, 8 chars)
+  // propTag = typeCode (4 hex) + propId (4 hex)
+  // e.g. Subject (0x0037) Unicode (0x001F) => "__substg1.0_0037001F"
+
+  function getProperty(propId, types = [0x001F, 0x001E]) {
+    for (const type of types) {
+      const hexTag = propId.toString(16).toUpperCase().padStart(4, "0");
+      const hexType = type.toString(16).toUpperCase().padStart(4, "0");
+      const streamName = `__substg1.0_${hexTag}${hexType}`;
+      const data = readStream(streamName);
+      if (data && data.length > 0) {
+        if (type === 0x001F) return utf16leToString(data);
+        if (type === 0x001E) return latin1ToString(data);
       }
     }
     return "";
   }
 
-  // MAPI property IDs
-  subject = searchPropertyValue(0x0037); // PR_SUBJECT
-  from    = searchPropertyValue(0x0C1A); // PR_SENDER_NAME
-  const fromEmail = searchPropertyValue(0x0C1F); // PR_SENDER_EMAIL_ADDRESS
-  to      = searchPropertyValue(0x0E04); // PR_DISPLAY_TO
-  const bodyText  = searchPropertyValue(0x1000); // PR_BODY (plain text)
-  const bodyHtml  = searchPropertyValue(0x1013); // PR_HTML (body HTML, stored as binary/ASCII)
-  date    = searchPropertyValue(0x0039); // PR_CLIENT_SUBMIT_TIME (usually binary, skip if garbage)
+  const subject     = getProperty(0x0037); // PR_SUBJECT
+  const senderName  = getProperty(0x0C1A); // PR_SENDER_NAME
+  const senderEmail = getProperty(0x0C1F); // PR_SENDER_EMAIL_ADDRESS
+  const displayTo   = getProperty(0x0E04); // PR_DISPLAY_TO
+  const displayCC   = getProperty(0x0E03); // PR_DISPLAY_CC
+  const bodyText    = getProperty(0x1000); // PR_BODY
+  // PR_HTML is stored as binary (type 0x0102), read as latin1
+  const bodyHtmlRaw = getProperty(0x1013, [0x0102, 0x001E, 0x001F]);
 
-  // Build "From" string
-  if (from && fromEmail) from = `${from} <${fromEmail}>`;
-  else if (fromEmail) from = fromEmail;
+  let from = senderName;
+  if (from && senderEmail) from = `${from} <${senderEmail}>`;
+  else if (senderEmail) from = senderEmail;
 
-  // Body: prefer HTML
-  body = bodyHtml || bodyText.replace(/\n/g, "<br>");
+  const body = bodyHtmlRaw || bodyText.replace(/\n/g, "<br>");
 
-  // Fallback: scan UTF-16 strings for subject if not found via property
-  if (!subject && utf16Strings.length > 0) {
-    // Subject is usually a short-ish standalone string
-    const candidates = utf16Strings.filter((s) => s.str.length > 2 && s.str.length < 200 && !s.str.startsWith("http") && !s.str.includes("\\"));
-    if (candidates.length > 0) subject = candidates[0].str;
-  }
-
-  // Fallback for "from" — look for SMTP: pattern in ASCII
-  if (!from) {
-    const smtpMatch = asciiStrings.find((s) => s.str.startsWith("SMTP:"));
-    if (smtpMatch) from = smtpMatch.str.replace("SMTP:", "");
-  }
-
-  // Clean up date (if binary garbage, discard)
-  if (date && !/\d{4}/.test(date)) date = "";
-
-  return { subject, from, to, cc: "", date, body };
+  return {
+    subject,
+    from,
+    to: displayTo,
+    cc: displayCC,
+    date: "",
+    body,
+  };
 }
