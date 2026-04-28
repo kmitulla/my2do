@@ -129,10 +129,14 @@ export default function QuickAdd({ categories, onCreated }) {
       return;
     }
 
-    // Outlook drag gives text/plain with full RFC 2822 headers
+    // Outlook drag: text/plain has headers, text/html has the body
     const plain = dt.getData("text/plain");
+    const html  = dt.getData("text/html");
     if (plain && (plain.includes("Subject:") || plain.includes("From:") || plain.includes("Betreff:"))) {
-      setEmailParsed(parseEmailText(plain));
+      const parsed = parseEmailText(plain);
+      // If Outlook also gave us HTML, use that as the body (richer content)
+      if (html) parsed.body = html;
+      setEmailParsed(parsed);
       return;
     }
 
@@ -211,7 +215,13 @@ export default function QuickAdd({ categories, onCreated }) {
       {emailParsed && (
         <EmailDropModal
           parsed={emailParsed}
-          onCreated={onCreated}
+          prio={prio}
+          category={category}
+          wiedervorlage={wiedervorlage}
+          onCreated={(todo) => {
+            setEmailParsed(null);
+            onCreated?.(todo);
+          }}
           onClose={() => setEmailParsed(null)}
         />
       )}

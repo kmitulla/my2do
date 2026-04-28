@@ -6,7 +6,7 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
  * Shown when an .eml / .msg file (or text/html drag from Outlook) is dropped.
  * Parses headers and body, asks user whether Subject → Title.
  */
-export default function EmailDropModal({ parsed, onCreated, onClose }) {
+export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B", category = "", wiedervorlage = null }) {
   const { user } = useFirebaseAuth();
   const [useSubjectAsTitle, setUseSubjectAsTitle] = useState(true);
   const [customTitle, setCustomTitle] = useState(parsed.subject || "");
@@ -31,18 +31,19 @@ export default function EmailDropModal({ parsed, onCreated, onClose }) {
       ? (parsed.subject || "E-Mail Aufgabe")
       : (customTitle.trim() || parsed.subject || "E-Mail Aufgabe");
 
-    await addTodo(user.uid, {
+    const newTodo = {
       title,
       description: buildDescription(),
-      prio: "B",
+      prio,
       status: "offen",
-      category: "",
+      category: category || "",
       deadline: null,
-      wiedervorlage: null,
+      wiedervorlage: wiedervorlage || null,
       archived: false,
-    });
+    };
+    const ref = await addTodo(user.uid, newTodo);
     setSaving(false);
-    onCreated?.();
+    onCreated?.({ id: ref.id, ...newTodo });
     onClose?.();
   };
 
