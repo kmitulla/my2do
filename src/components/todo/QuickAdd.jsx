@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { addTodo } from "@/lib/todoService";
 import EmailDropModal from "./EmailDropModal";
+import MsgReader from "@kenjiuno/msgreader";
 
 const PRIOS = ["A", "B", "C"];
 const PRIO_BASE = {
@@ -143,13 +144,28 @@ export default function QuickAdd({ categories, onCreated }) {
       try { console.log(`[EmailDrop] ${t}:`, dt.getData(t).substring(0, 300)); } catch {}
     });
 
-    // Try .eml / .msg file first
+    // Try .msg file (Outlook binary format) first
     const files = Array.from(dt.files || []);
-    const emailFile = files.find((f) =>
-      f.name.endsWith(".eml") || f.name.endsWith(".msg") || f.type === "message/rfc822"
-    );
-    if (emailFile) {
-      const text = await emailFile.text();
+    const msgFile = files.find((f) => f.name.endsWith(".msg"));
+    if (msgFile) {
+      const buffer = await msgFile.arrayBuffer();
+      const reader = new MsgReader(buffer);
+      const info = reader.getFileData();
+      setEmailParsed({
+        subject: info.subject || "",
+        from: info.senderName ? `${info.senderName} <${info.senderEmail || ""}>` : (info.senderEmail || ""),
+        to: (info.recipients || []).map((r) => r.name || r.email).join(", "),
+        cc: "",
+        date: "",
+        body: info.bodyHtml || (info.body ? info.body.replace(/\n/g, "<br>") : ""),
+      });
+      return;
+    }
+
+    // Try .eml file
+    const emlFile = files.find((f) => f.name.endsWith(".eml") || f.type === "message/rfc822");
+    if (emlFile) {
+      const text = await emlFile.text();
       setEmailParsed(parseEmailText(text));
       return;
     }
