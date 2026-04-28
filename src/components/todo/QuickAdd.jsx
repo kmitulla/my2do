@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { addTodo } from "@/lib/todoService";
 import EmailDropModal from "./EmailDropModal";
-import MsgReader from "@kenjiuno/msgreader";
+import { parseMsgFile } from "@/lib/msgParser";
+
 
 const PRIOS = ["A", "B", "C"];
 const PRIO_BASE = {
@@ -149,16 +150,8 @@ export default function QuickAdd({ categories, onCreated }) {
     const msgFile = files.find((f) => f.name.endsWith(".msg"));
     if (msgFile) {
       const buffer = await msgFile.arrayBuffer();
-      const reader = new MsgReader(buffer);
-      const info = reader.getFileData();
-      setEmailParsed({
-        subject: info.subject || "",
-        from: info.senderName ? `${info.senderName} <${info.senderEmail || ""}>` : (info.senderEmail || ""),
-        to: (info.recipients || []).map((r) => r.name || r.email).join(", "),
-        cc: "",
-        date: "",
-        body: info.bodyHtml || (info.body ? info.body.replace(/\n/g, "<br>") : ""),
-      });
+      const parsed = parseMsgFile(buffer);
+      setEmailParsed(parsed);
       return;
     }
 
