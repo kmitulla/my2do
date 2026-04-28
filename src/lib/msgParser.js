@@ -189,12 +189,18 @@ export function parseMsgFile(arrayBuffer) {
     // Try Unicode (001F) first
     const uName = `__substg1.0_${hex}001F`;
     const uData = readStream(uName);
-    if (uData && uData.length > 0) return utf16leToString(uData).trim();
+    if (uData && uData.length > 0) {
+      const s = utf16leToString(uData).trim();
+      if (s) return s;
+    }
 
     // Try ASCII (001E)
     const aName = `__substg1.0_${hex}001E`;
     const aData = readStream(aName);
-    if (aData && aData.length > 0) return latin1ToString(aData).trim();
+    if (aData && aData.length > 0) {
+      const s = latin1ToString(aData).trim();
+      if (s) return s;
+    }
 
     return "";
   }
@@ -207,18 +213,19 @@ export function parseMsgFile(arrayBuffer) {
     return data;
   }
 
-  const subject     = getProp(0x0037); // PR_SUBJECT
-  const senderName  = getProp(0x0C1A); // PR_SENDER_NAME
-  const senderEmail = getProp(0x0C1F); // PR_SENDER_EMAIL_ADDRESS  (SMTP addr)
-  const displayTo   = getProp(0x0E04); // PR_DISPLAY_TO
-  const displayCC   = getProp(0x0E03); // PR_DISPLAY_CC
-  const bodyText    = getProp(0x1000); // PR_BODY (plain text)
+  const subject      = getProp(0x0037); // PR_SUBJECT
+  const senderName   = getProp(0x0C1A); // PR_SENDER_NAME
+  const senderEmail  = getProp(0x0C1F); // PR_SENDER_EMAIL_ADDRESS (SMTP)
+  const senderEmail2 = getProp(0x0065); // PR_SENT_REPRESENTING_EMAIL_ADDRESS (fallback)
+  const displayTo    = getProp(0x0E04); // PR_DISPLAY_TO
+  const toEmail      = getProp(0x0076); // PR_RECEIVED_BY_EMAIL_ADDRESS (fallback for To email)
+  const displayCC    = getProp(0x0E03); // PR_DISPLAY_CC
+  const bodyText     = getProp(0x1000); // PR_BODY (plain text)
 
   // PR_HTML_BODY is binary (0102)
   let bodyHtml = "";
   const htmlData = getPropBinary(0x1013);
   if (htmlData && htmlData.length > 0) {
-    // Try UTF-8 decode first, fallback to latin1
     try {
       bodyHtml = new TextDecoder("utf-8").decode(htmlData);
     } catch {
@@ -226,12 +233,19 @@ export function parseMsgFile(arrayBuffer) {
     }
   }
 
+  // Build From: "Name <email>"
+  const resolvedEmail = senderEmail || senderEmail2;
   let from = "";
-  if (senderName && senderEmail) from = `${senderName} <${senderEmail}>`;
+  if (senderName && resolvedEmail) from = `${senderName} <${resolvedEmail}>`;
   else if (senderName) from = senderName;
-  else if (senderEmail) from = senderEmail;
+  else if (resolvedEmail) from = resolvedEmail;
+
+  // Build To: append email if missing from displayTo
+  let to = displayTo;
+  if (toEmail && to && !to.includes("@")) to = `${to} <${toEmail}>`;
+  else if (toEmail && !to) to = toEmail;
 
   const body = bodyHtml || bodyText.replace(/\n/g, "<br>");
 
-  return { subject, from, to: displayTo, cc: displayCC, date: "", body };
+  return { subject, from, to, cc: displayCC, date: "", body };
 }
