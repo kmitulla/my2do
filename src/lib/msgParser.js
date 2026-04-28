@@ -1,80 +1,31 @@
 /**
  * Browser-compatible .msg (OLE2/CFB) parser.
- * Finds the "__substg1.0_XXXXXXXX" directory entries in the CFB structure
- * and reads the actual property values from them.
- *
- * CFB header is at offset 0, sector size is 512 bytes (older) or 4096 bytes (newer).
- * Directory entries are 128 bytes each, stored in directory sectors.
+ * Reads directory entries named "__substg1.0_PPPPTTTT" where
+ * PPPP = property ID (hex), TTTT = type (hex).
  */
 
-const SECTOR_SIZE = 512;
-const DIRENT_SIZE = 128;
-
 function readUint32LE(buf, offset) {
-  return (buf[offset] | (buf[offset+1] << 8) | (buf[offset+2] << 16) | (buf[offset+3] << 24)) >>> 0;
+  return ((buf[offset] | (buf[offset+1] << 8) | (buf[offset+2] << 16) | (buf[offset+3] << 24)) >>> 0);
 }
-
 function readUint16LE(buf, offset) {
-  return buf[offset] | (buf[offset+1] << 8);
+  return (buf[offset] | (buf[offset+1] << 8)) >>> 0;
 }
 
-function sectorOffset(sectorId) {
-  return (sectorId + 1) * SECTOR_SIZE;
-}
-
-function readSector(bytes, sectorId) {
-  const off = sectorOffset(sectorId);
-  return bytes.slice(off, off + SECTOR_SIZE);
-}
-
-// Follow the FAT chain starting at startSector
-function readFATChain(bytes, fat, startSector) {
-  const sectors = [];
-  let cur = startSector;
-  const ENDOFCHAIN = 0xFFFFFFFE;
-  const FREESECT   = 0xFFFFFFFF;
-  let guard = 0;
-  while (cur !== ENDOFCHAIN && cur !== FREESECT && cur < fat.length && guard++ < 4096) {
-    sectors.push(cur);
-    cur = fat[cur];
-  }
-  return sectors;
-}
-
-function concatSectors(bytes, sectors) {
-  const chunks = sectors.map((s) => readSector(bytes, s));
-  const total = chunks.reduce((a, c) => a + c.length, 0);
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) { out.set(c, off); off += c.length; }
-  return out;
-}
-
-function readDirEntryName(bytes, offset) {
-  const nameLen = readUint16LE(bytes, offset + 64);
-  if (nameLen < 2) return "";
+function utf16leToString(data) {
   const chars = [];
-  for (let i = 0; i < nameLen - 2; i += 2) {
-    chars.push(String.fromCharCode(readUint16LE(bytes, offset + i)));
-  }
-  return chars.join("");
-}
-
-function utf16leToString(bytes) {
-  const chars = [];
-  for (let i = 0; i < bytes.length - 1; i += 2) {
-    const code = bytes[i] | (bytes[i+1] << 8);
+  for (let i = 0; i + 1 < data.length; i += 2) {
+    const code = data[i] | (data[i+1] << 8);
     if (code === 0) break;
     chars.push(String.fromCharCode(code));
   }
   return chars.join("");
 }
 
-function latin1ToString(bytes) {
+function latin1ToString(data) {
   let s = "";
-  for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] === 0) break;
-    s += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === 0) break;
+    s += String.fromCharCode(data[i]);
   }
   return s;
 }
@@ -82,127 +33,205 @@ function latin1ToString(bytes) {
 export function parseMsgFile(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
 
-  // Validate CFB magic
+  // Validate OLE2 magic
   if (bytes[0] !== 0xD0 || bytes[1] !== 0xCF) {
     return { subject: "", from: "", to: "", cc: "", date: "", body: "" };
   }
 
-  // Sector size from header (usually 512)
-  const sectorSizeExp = readUint16LE(bytes, 30);
-  const secSize = Math.pow(2, sectorSizeExp); // usually 512
+  const secSizeExp = readUint16LE(bytes, 30);
+  const secSize = Math.pow(2, secSizeExp); // typically 512
 
-  // Number of FAT sectors
-  const numFATSectors = readUint32LE(bytes, 44);
-  // First directory sector
-  const firstDirSector = readUint32LE(bytes, 48);
-  // DIFAT array starts at offset 76, 109 entries inline
-  const difat = [];
-  for (let i = 0; i < 109; i++) {
-    const s = readUint32LE(bytes, 76 + i * 4);
-    if (s === 0xFFFFFFFF || s === 0xFFFFFFFE) break;
-    difat.push(s);
-  }
-
-  // Build FAT
-  const fat = [];
-  for (const fatSec of difat) {
+  // Build FAT from DIFAT (first 109 entries in header at offset 76)
+  const fat = new Array(bytes.length / secSize + 1).fill(0xFFFFFFFF);
+  for (let di = 0; di < 109; di++) {
+    const fatSec = readUint32LE(bytes, 76 + di * 4);
+    if (fatSec >= 0xFFFFFFFA) break;
     const off = (fatSec + 1) * secSize;
     for (let i = 0; i < secSize / 4; i++) {
-      fat.push(readUint32LE(bytes, off + i * 4));
+      fat[fatSec * (secSize / 4) + i] = readUint32LE(bytes, off + i * 4);
+    }
+    // Rebuild as flat array indexed by sector id
+  }
+
+  // Simpler FAT: just read all FAT sectors in order
+  const flatFat = [];
+  for (let di = 0; di < 109; di++) {
+    const fatSec = readUint32LE(bytes, 76 + di * 4);
+    if (fatSec >= 0xFFFFFFFA) break;
+    const off = (fatSec + 1) * secSize;
+    for (let i = 0; i < secSize / 4; i++) {
+      flatFat.push(readUint32LE(bytes, off + i * 4));
     }
   }
 
-  // Read directory entries
   function followChain(start) {
     const sectors = [];
     let cur = start;
-    const END = 0xFFFFFFFE, FREE = 0xFFFFFFFF;
     let guard = 0;
-    while (cur !== END && cur !== FREE && cur < fat.length && guard++ < 1000) {
+    while (cur < 0xFFFFFFFA && cur < flatFat.length && guard++ < 10000) {
       sectors.push(cur);
-      cur = fat[cur];
+      cur = flatFat[cur];
     }
     return sectors;
   }
 
+  function readStreamData(startSector, size) {
+    const sectors = followChain(startSector);
+    const buf = new Uint8Array(sectors.length * secSize);
+    for (let i = 0; i < sectors.length; i++) {
+      const off = (sectors[i] + 1) * secSize;
+      buf.set(bytes.slice(off, off + secSize), i * secSize);
+    }
+    return buf.slice(0, size);
+  }
+
+  // Mini stream support
+  const miniStreamCutoff = readUint32LE(bytes, 56); // usually 4096
+  const firstMiniFATSector = readUint32LE(bytes, 60);
+  
+  // Read mini FAT
+  const miniFat = [];
+  if (firstMiniFATSector < 0xFFFFFFFA) {
+    const mfSectors = followChain(firstMiniFATSector);
+    for (const s of mfSectors) {
+      const off = (s + 1) * secSize;
+      for (let i = 0; i < secSize / 4; i++) {
+        miniFat.push(readUint32LE(bytes, off + i * 4));
+      }
+    }
+  }
+
+  // Read directory
+  const firstDirSector = readUint32LE(bytes, 48);
   const dirSectors = followChain(firstDirSector);
-  const dirData = [];
-  for (const s of dirSectors) {
-    const off = (s + 1) * secSize;
-    for (let i = 0; i < secSize; i++) dirData.push(bytes[off + i] || 0);
+  const DIRENT = 128;
+
+  // Root entry: sector 0 in directory, gives us mini stream location
+  let rootStartSector = 0xFFFFFFFF;
+  let rootSize = 0;
+
+  // Parse all directory entries
+  const streamMap = {}; // name -> {startSector, size, inMini}
+
+  for (let si = 0; si < dirSectors.length; si++) {
+    const secOff = (dirSectors[si] + 1) * secSize;
+    const entriesPerSec = secSize / DIRENT;
+    for (let ei = 0; ei < entriesPerSec; ei++) {
+      const off = secOff + ei * DIRENT;
+      const objType = bytes[off + 66];
+      const nameLen = readUint16LE(bytes, off + 64);
+      if (nameLen < 2) continue;
+
+      const nameChars = [];
+      for (let ni = 0; ni < nameLen - 2; ni += 2) {
+        nameChars.push(String.fromCharCode(readUint16LE(bytes, off + ni)));
+      }
+      const name = nameChars.join("");
+
+      const startSector = readUint32LE(bytes, off + 116);
+      const size = readUint32LE(bytes, off + 120);
+
+      if (objType === 5 && name === "Root Entry") {
+        // Root entry - holds mini stream start
+        rootStartSector = startSector;
+        rootSize = size;
+      } else if (objType === 2) {
+        // Stream entry
+        const inMini = size < miniStreamCutoff && rootStartSector !== 0xFFFFFFFF;
+        streamMap[name] = { startSector, size, inMini };
+      }
+    }
   }
-  const dirBytes = new Uint8Array(dirData);
 
-  const numDirEntries = dirBytes.length / DIRENT_SIZE;
-  const streamMap = {}; // name -> { startSector, size }
-
-  for (let e = 0; e < numDirEntries; e++) {
-    const off = e * DIRENT_SIZE;
-    const name = readDirEntryName(dirBytes, off);
-    const objType = dirBytes[off + 66];
-    if (objType !== 2) continue; // 2 = stream entry
-
-    const startSector = readUint32LE(dirBytes, off + 116);
-    const size = readUint32LE(dirBytes, off + 120);
-    streamMap[name] = { startSector, size };
+  // Read mini stream container
+  let miniStreamData = null;
+  function getMiniStreamData() {
+    if (!miniStreamData && rootStartSector < 0xFFFFFFFA) {
+      miniStreamData = readStreamData(rootStartSector, rootSize);
+    }
+    return miniStreamData;
   }
 
-  // Read a stream by name
+  function readMiniStreamEntry(startSector, size) {
+    const miniSectorSize = 64;
+    const container = getMiniStreamData();
+    if (!container) return new Uint8Array(0);
+    
+    const sectors = [];
+    let cur = startSector;
+    let guard = 0;
+    while (cur < 0xFFFFFFFA && cur < miniFat.length && guard++ < 10000) {
+      sectors.push(cur);
+      cur = miniFat[cur];
+    }
+    
+    const buf = new Uint8Array(sectors.length * miniSectorSize);
+    for (let i = 0; i < sectors.length; i++) {
+      const off = sectors[i] * miniSectorSize;
+      buf.set(container.slice(off, off + miniSectorSize), i * miniSectorSize);
+    }
+    return buf.slice(0, size);
+  }
+
   function readStream(name) {
     const entry = streamMap[name];
     if (!entry) return null;
-    const { startSector, size } = entry;
-
-    // Mini stream threshold is 4096 — for small files, data is in mini stream
-    // For simplicity, read from main stream (covers most real .msg files)
-    const sectors = followChain(startSector);
-    const allData = [];
-    for (const s of sectors) {
-      const off = (s + 1) * secSize;
-      for (let i = 0; i < secSize; i++) allData.push(bytes[off + i] || 0);
+    if (entry.inMini && miniFat.length > 0) {
+      return readMiniStreamEntry(entry.startSector, entry.size);
     }
-    return new Uint8Array(allData.slice(0, size));
+    return readStreamData(entry.startSector, entry.size);
   }
 
-  // MAPI property stream names: "__substg1.0_" + propTag (hex, uppercase, 8 chars)
-  // propTag = typeCode (4 hex) + propId (4 hex)
-  // e.g. Subject (0x0037) Unicode (0x001F) => "__substg1.0_0037001F"
+  // Get property by ID, trying unicode first then ascii
+  function getProp(propId) {
+    const hex = propId.toString(16).toUpperCase().padStart(4, "0");
+    
+    // Try Unicode (001F) first
+    const uName = `__substg1.0_${hex}001F`;
+    const uData = readStream(uName);
+    if (uData && uData.length > 0) return utf16leToString(uData).trim();
 
-  function getProperty(propId, types = [0x001F, 0x001E]) {
-    for (const type of types) {
-      const hexTag = propId.toString(16).toUpperCase().padStart(4, "0");
-      const hexType = type.toString(16).toUpperCase().padStart(4, "0");
-      const streamName = `__substg1.0_${hexTag}${hexType}`;
-      const data = readStream(streamName);
-      if (data && data.length > 0) {
-        if (type === 0x001F) return utf16leToString(data);
-        if (type === 0x001E) return latin1ToString(data);
-      }
-    }
+    // Try ASCII (001E)
+    const aName = `__substg1.0_${hex}001E`;
+    const aData = readStream(aName);
+    if (aData && aData.length > 0) return latin1ToString(aData).trim();
+
     return "";
   }
 
-  const subject     = getProperty(0x0037); // PR_SUBJECT
-  const senderName  = getProperty(0x0C1A); // PR_SENDER_NAME
-  const senderEmail = getProperty(0x0C1F); // PR_SENDER_EMAIL_ADDRESS
-  const displayTo   = getProperty(0x0E04); // PR_DISPLAY_TO
-  const displayCC   = getProperty(0x0E03); // PR_DISPLAY_CC
-  const bodyText    = getProperty(0x1000); // PR_BODY
-  // PR_HTML is stored as binary (type 0x0102), read as latin1
-  const bodyHtmlRaw = getProperty(0x1013, [0x0102, 0x001E, 0x001F]);
+  // Get binary property (e.g. HTML body stored as 0102)
+  function getPropBinary(propId) {
+    const hex = propId.toString(16).toUpperCase().padStart(4, "0");
+    const name = `__substg1.0_${hex}0102`;
+    const data = readStream(name);
+    return data;
+  }
 
-  let from = senderName;
-  if (from && senderEmail) from = `${from} <${senderEmail}>`;
+  const subject     = getProp(0x0037); // PR_SUBJECT
+  const senderName  = getProp(0x0C1A); // PR_SENDER_NAME
+  const senderEmail = getProp(0x0C1F); // PR_SENDER_EMAIL_ADDRESS  (SMTP addr)
+  const displayTo   = getProp(0x0E04); // PR_DISPLAY_TO
+  const displayCC   = getProp(0x0E03); // PR_DISPLAY_CC
+  const bodyText    = getProp(0x1000); // PR_BODY (plain text)
+
+  // PR_HTML_BODY is binary (0102)
+  let bodyHtml = "";
+  const htmlData = getPropBinary(0x1013);
+  if (htmlData && htmlData.length > 0) {
+    // Try UTF-8 decode first, fallback to latin1
+    try {
+      bodyHtml = new TextDecoder("utf-8").decode(htmlData);
+    } catch {
+      bodyHtml = latin1ToString(htmlData);
+    }
+  }
+
+  let from = "";
+  if (senderName && senderEmail) from = `${senderName} <${senderEmail}>`;
+  else if (senderName) from = senderName;
   else if (senderEmail) from = senderEmail;
 
-  const body = bodyHtmlRaw || bodyText.replace(/\n/g, "<br>");
+  const body = bodyHtml || bodyText.replace(/\n/g, "<br>");
 
-  return {
-    subject,
-    from,
-    to: displayTo,
-    cc: displayCC,
-    date: "",
-    body,
-  };
+  return { subject, from, to: displayTo, cc: displayCC, date: "", body };
 }
