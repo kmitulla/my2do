@@ -75,7 +75,7 @@ const IconPlus = () => (
   </svg>
 );
 
-// Parse a dragged .eml / .msg text or HTML blob from Outlook
+// Parse RFC-2822 header from text
 function parseEmailText(text) {
   const header = (name) => {
     const m = text.match(new RegExp(`^${name}:\\s*(.+)$`, "im"));
@@ -86,10 +86,28 @@ function parseEmailText(text) {
   const to      = header("To")      || header("An");
   const cc      = header("Cc")      || header("CC");
   const date    = header("Date")    || header("Datum");
-  // Body: everything after the first blank line after headers
   const bodyMatch = text.match(/\r?\n\r?\n([\s\S]*)/);
   const body = bodyMatch ? bodyMatch[1].trim().replace(/\n/g, "<br>") : "";
   return { subject, from, to, cc, date, body };
+}
+
+// Extract subject from Outlook HTML drag (looks in <title> and common Outlook patterns)
+function extractSubjectFromHtml(html) {
+  // Outlook puts subject in <title> tag
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  if (titleMatch) return titleMatch[1].trim();
+  // Some Outlook versions use a Subject: line in the HTML
+  const subjectMatch = html.match(/Subject:\s*([^\r\n<]+)/i);
+  if (subjectMatch) return subjectMatch[1].trim();
+  return "";
+}
+
+// Extract From/To/CC/Date from Outlook HTML (embedded in table headers)
+function extractHeaderFromHtml(html, label) {
+  // Outlook embeds headers like: <b>Von:</b> Name &lt;email&gt;
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = html.match(new RegExp(`${escaped}[^>]*>\\s*([^<]+)`, "i"));
+  return m ? m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim() : "";
 }
 
 export default function QuickAdd({ categories, onCreated }) {
@@ -118,6 +136,13 @@ export default function QuickAdd({ categories, onCreated }) {
     setDragOver(false);
     const dt = e.dataTransfer;
 
+    // Log all available types so we can debug what Outlook sends
+    const types = Array.from(dt.types || []);
+    console.log("[EmailDrop] types:", types);
+    types.forEach((t) => {
+      try { console.log(`[EmailDrop] ${t}:`, dt.getData(t).substring(0, 300)); } catch {}
+    });
+
     // Try .eml / .msg file first
     const files = Array.from(dt.files || []);
     const emailFile = files.find((f) =>
@@ -129,19 +154,33 @@ export default function QuickAdd({ categories, onCreated }) {
       return;
     }
 
-    // Outlook drag: text/plain has headers, text/html has the body
     const plain = dt.getData("text/plain");
     const html  = dt.getData("text/html");
+
+    // Case 1: plain text has RFC-2822 headers (e.g. .eml content or some clients)
     if (plain && (plain.includes("Subject:") || plain.includes("From:") || plain.includes("Betreff:"))) {
       const parsed = parseEmailText(plain);
-      // If Outlook also gave us HTML, use that as the body (richer content)
+      if (html && !parsed.subject) parsed.subject = extractSubjectFromHtml(html);
       if (html) parsed.body = html;
       setEmailParsed(parsed);
       return;
     }
 
-    // Fallback: treat dropped text as title
-    if (plain) setTitle(plain.substring(0, 120));
+    // Case 2: Outlook drag — only HTML, no RFC headers in plain text
+    if (html) {
+      const subject = extractSubjectFromHtml(html);
+      const from = extractHeaderFromHtml(html, "Von") || extractHeaderFromHtml(html, "From");
+      const to   = extractHeaderFromHtml(html, "An")  || extractHeaderFromHtml(html, "To");
+      const cc   = extractHeaderFromHtml(html, "CC")  || extractHeaderFromHtml(html, "Cc");
+      const date = extractHeaderFromHtml(html, "Datum") || extractHeaderFromHtml(html, "Date") || extractHeaderFromHtml(html, "Gesendet") || extractHeaderFromHtml(html, "Sent");
+      setEmailParsed({ subject, from, to, cc, date, body: html });
+      return;
+    }
+
+    // Case 3: plain text only — use as body, ask user for subject in modal
+    if (plain) {
+      setEmailParsed({ subject: "", from: "", to: "", cc: "", date: "", body: plain.replace(/\n/g, "<br>") });
+    }
   };
 
   const handleChange = (e) => {

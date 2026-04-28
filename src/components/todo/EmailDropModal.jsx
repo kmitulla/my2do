@@ -8,7 +8,8 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
  */
 export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B", category = "", wiedervorlage = null }) {
   const { user } = useFirebaseAuth();
-  const [useSubjectAsTitle, setUseSubjectAsTitle] = useState(true);
+  // If no subject was detected, always show free-text title field
+  const [useSubjectAsTitle, setUseSubjectAsTitle] = useState(!!parsed.subject);
   const [customTitle, setCustomTitle] = useState(parsed.subject || "");
   const [saving, setSaving] = useState(false);
 
@@ -18,8 +19,6 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
     if (parsed.to)      lines.push(`<b>An:</b> ${parsed.to}`);
     if (parsed.cc)      lines.push(`<b>CC:</b> ${parsed.cc}`);
     if (parsed.date)    lines.push(`<b>Datum:</b> ${parsed.date}`);
-    if (!useSubjectAsTitle && parsed.subject)
-      lines.push(`<b>Betreff:</b> ${parsed.subject}`);
     if (lines.length > 0) lines.push(""); // spacer
     if (parsed.body)    lines.push(parsed.body);
     return lines.join("<br>");
@@ -27,9 +26,7 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
 
   const handleSave = async () => {
     setSaving(true);
-    const title = useSubjectAsTitle
-      ? (parsed.subject || "E-Mail Aufgabe")
-      : (customTitle.trim() || parsed.subject || "E-Mail Aufgabe");
+    const title = customTitle.trim() || parsed.subject || "E-Mail Aufgabe";
 
     const newTodo = {
       title,
@@ -76,40 +73,18 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
           {parsed.date    && <div><span className="text-slate-400 font-semibold">Datum: </span><span className="text-slate-700">{parsed.date}</span></div>}
         </div>
 
-        {/* Subject → Title? */}
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-slate-700">Soll der Betreff als Notiz-Titel verwendet werden?</p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setUseSubjectAsTitle(true)}
-              className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${
-                useSubjectAsTitle
-                  ? "bg-blue-500 text-white shadow-md"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              Ja, Betreff als Titel
-            </button>
-            <button
-              onClick={() => setUseSubjectAsTitle(false)}
-              className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${
-                !useSubjectAsTitle
-                  ? "bg-slate-600 text-white shadow-md"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              Nein, eigenen Titel
-            </button>
-          </div>
-
-          {!useSubjectAsTitle && (
-            <input
-              value={customTitle}
-              onChange={(e) => setCustomTitle(e.target.value)}
-              placeholder="Eigener Notiz-Titel…"
-              className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
-              autoFocus
-            />
+        {/* Title input — always editable */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Notiz-Titel</p>
+          <input
+            value={customTitle}
+            onChange={(e) => setCustomTitle(e.target.value)}
+            placeholder="Titel eingeben…"
+            className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+            autoFocus
+          />
+          {!customTitle && (
+            <p className="text-[11px] text-amber-500">⚠ Kein Betreff erkannt — bitte Titel manuell eingeben</p>
           )}
         </div>
 
