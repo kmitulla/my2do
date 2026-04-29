@@ -1,6 +1,5 @@
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 
-// Simple rich text editor using contentEditable with execCommand
 const COLORS = ["#000000", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280"];
 const HIGHLIGHTS = ["transparent", "#fef08a", "#bbf7d0", "#bfdbfe", "#fecaca", "#e9d5ff", "#fed7aa"];
 const FONT_SIZES = ["12px", "14px", "16px", "18px", "20px", "24px", "28px"];
@@ -12,7 +11,7 @@ function buildTimestamp() {
   return `---${d} // ${t}---`;
 }
 
-export default function RichEditor({ value, onChange, placeholder, minHeight = 160 }) {
+const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder, minHeight = 160 }, ref) {
   const editorRef = useRef(null);
   const isInitialized = useRef(false);
 
@@ -32,6 +31,27 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
   const handleInput = useCallback(() => {
     onChange?.(editorRef.current?.innerHTML || "");
   }, [onChange]);
+
+  const insertTimestamp = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    // Insert styled timestamp, then a <br> and a plain span to reset formatting so the cursor is back to normal
+    document.execCommand("insertHTML", false,
+      `<span style="color:#6366f1;font-style:italic;font-size:12px;font-weight:normal">${buildTimestamp()}</span><br><span style="color:inherit;font-style:normal;font-size:inherit;font-weight:normal">&#8203;</span>`
+    );
+    handleInput();
+  }, [handleInput]);
+
+  // Expose insertTimestamp via ref so parent (TodoDetail footer button) can call it
+  useImperativeHandle(ref, () => ({ insertTimestamp }), [insertTimestamp]);
+
+  const handleKeyDown = useCallback((e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "t") {
+      e.preventDefault();
+      insertTimestamp();
+    }
+  }, [insertTimestamp]);
 
   const insertTable = () => {
     const cols = parseInt(prompt("Anzahl Spalten:", "3") || "3", 10);
@@ -73,8 +93,8 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
       const newTd = document.createElement("td");
       newTd.style.cssText = tdStyle;
       newTd.innerHTML = "&nbsp;";
-      const ref = row.children[colIdx + 1] || null;
-      row.insertBefore(newTd, ref);
+      const ref2 = row.children[colIdx + 1] || null;
+      row.insertBefore(newTd, ref2);
     });
     handleInput();
   };
@@ -109,24 +129,10 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
     if (url) exec("createLink", url);
   };
 
-  const insertTimestamp = useCallback(() => {
-    editorRef.current?.focus();
-    document.execCommand("insertHTML", false, `<br><span style="color:#6366f1;font-style:italic;font-size:12px">${buildTimestamp()}</span><br>`);
-    handleInput();
-  }, [handleInput]);
-
-  const handleKeyDown = useCallback((e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "t") {
-      e.preventDefault();
-      insertTimestamp();
-    }
-  }, [insertTimestamp]);
-
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white/80">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 bg-slate-50/80">
-        {/* Undo / Redo */}
         <ToolBtn onClick={() => exec("undo")} title="Rückgängig">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
@@ -138,13 +144,11 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
           </svg>
         </ToolBtn>
         <Sep />
-        {/* Basic */}
         <ToolBtn onClick={() => exec("bold")} title="Fett"><b>B</b></ToolBtn>
         <ToolBtn onClick={() => exec("italic")} title="Kursiv"><i>I</i></ToolBtn>
         <ToolBtn onClick={() => exec("underline")} title="Unterstrichen"><u>U</u></ToolBtn>
         <ToolBtn onClick={() => exec("strikeThrough")} title="Durchgestrichen"><s>S</s></ToolBtn>
         <Sep />
-        {/* Lists */}
         <ToolBtn onClick={() => exec("insertUnorderedList")} title="Aufzählungsliste">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
         </ToolBtn>
@@ -152,7 +156,6 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="1" y="8" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">1.</text><text x="1" y="14" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">2.</text><text x="1" y="20" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">3.</text></svg>
         </ToolBtn>
         <Sep />
-        {/* Color */}
         <div className="flex items-center gap-0.5">
           {COLORS.map((c) => (
             <button key={c} onClick={() => exec("foreColor", c)} title={c}
@@ -161,7 +164,6 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
           ))}
         </div>
         <Sep />
-        {/* Highlight */}
         <div className="flex items-center gap-0.5">
           {HIGHLIGHTS.map((c) => (
             <button key={c} onClick={() => exec("hiliteColor", c)} title="Markieren"
@@ -172,10 +174,8 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
           ))}
         </div>
         <Sep />
-        {/* Font size */}
         <select onChange={(e) => {
           exec("fontSize", 3);
-          // Apply via span since execCommand fontSize is limited
           const sel = window.getSelection();
           if (sel?.rangeCount) {
             const range = sel.getRangeAt(0);
@@ -188,7 +188,6 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
           {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <Sep />
-        {/* Table & Link */}
         <ToolBtn onClick={insertTable} title="Neue Tabelle">⊞</ToolBtn>
         <ToolBtn onClick={addTableRow} title="Zeile hinzufügen (Cursor in Zeile)">+Z</ToolBtn>
         <ToolBtn onClick={addTableCol} title="Spalte hinzufügen (Cursor in Zelle)">+S</ToolBtn>
@@ -229,7 +228,9 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
       `}</style>
     </div>
   );
-}
+});
+
+export default RichEditor;
 
 function ToolBtn({ onClick, title, children }) {
   return (

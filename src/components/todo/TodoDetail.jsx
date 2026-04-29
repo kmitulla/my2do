@@ -46,6 +46,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   // Track if dirty (for auto-save vs X close)
   const isDirtyRef = useRef(false);
   const closedWithX = useRef(false);
+  const richEditorRef = useRef(null);
 
   // Block horizontal scroll on the modal completely
   useEffect(() => {
@@ -125,12 +126,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   };
 
   const insertTimestampInDescription = () => {
-    const now = new Date();
-    const d = now.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const t = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-    const stamp = `---${d} // ${t}---`;
-    const current = form.description || "";
-    set("description", current + (current ? "<br>" : "") + `<span style="color:#6366f1;font-style:italic;font-size:12px">${stamp}</span>`);
+    richEditorRef.current?.insertTimestamp();
   };
 
   const addNewCategory = async () => {
@@ -267,6 +263,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Beschreibung</label>
             <RichEditor
+              ref={richEditorRef}
               value={form.description || ""}
               onChange={(v) => set("description", v)}
               placeholder="Beschreibung eingeben..."
