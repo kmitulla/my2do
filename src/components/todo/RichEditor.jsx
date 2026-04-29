@@ -5,6 +5,13 @@ const COLORS = ["#000000", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"
 const HIGHLIGHTS = ["transparent", "#fef08a", "#bbf7d0", "#bfdbfe", "#fecaca", "#e9d5ff", "#fed7aa"];
 const FONT_SIZES = ["12px", "14px", "16px", "18px", "20px", "24px", "28px"];
 
+function buildTimestamp() {
+  const now = new Date();
+  const d = now.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const t = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return `---${d} // ${t}---`;
+}
+
 export default function RichEditor({ value, onChange, placeholder, minHeight = 160 }) {
   const editorRef = useRef(null);
   const isInitialized = useRef(false);
@@ -102,6 +109,19 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
     if (url) exec("createLink", url);
   };
 
+  const insertTimestamp = useCallback(() => {
+    editorRef.current?.focus();
+    document.execCommand("insertHTML", false, `<br><span style="color:#6366f1;font-style:italic;font-size:12px">${buildTimestamp()}</span><br>`);
+    handleInput();
+  }, [handleInput]);
+
+  const handleKeyDown = useCallback((e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "t") {
+      e.preventDefault();
+      insertTimestamp();
+    }
+  }, [insertTimestamp]);
+
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white/80">
       {/* Toolbar */}
@@ -175,6 +195,12 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
         <ToolBtn onClick={removeTableRow} title="Zeile löschen (Cursor in Zeile)">-Z</ToolBtn>
         <ToolBtn onClick={removeTableCol} title="Spalte löschen (Cursor in Zelle)">-S</ToolBtn>
         <ToolBtn onClick={insertLink} title="Link">🔗</ToolBtn>
+        <Sep />
+        <ToolBtn onClick={insertTimestamp} title="Zeitmarke einfügen (Strg+T)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </ToolBtn>
       </div>
 
       {/* Editor area */}
@@ -183,6 +209,7 @@ export default function RichEditor({ value, onChange, placeholder, minHeight = 1
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
+        onKeyDown={handleKeyDown}
         data-placeholder={placeholder}
         style={{ minHeight }}
         className="px-4 py-3 text-sm text-slate-700 focus:outline-none overflow-y-auto rich-editor"

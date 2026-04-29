@@ -31,6 +31,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   const [form, setForm] = useState({ ...todo });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [showNewCat, setShowNewCat] = useState(false);
 
@@ -118,8 +119,18 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   };
 
   const handleArchive = async () => {
+    if (!confirmArchive) { setConfirmArchive(true); return; }
     await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
     onClose();
+  };
+
+  const insertTimestampInDescription = () => {
+    const now = new Date();
+    const d = now.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const t = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const stamp = `---${d} // ${t}---`;
+    const current = form.description || "";
+    set("description", current + (current ? "<br>" : "") + `<span style="color:#6366f1;font-style:italic;font-size:12px">${stamp}</span>`);
   };
 
   const addNewCategory = async () => {
@@ -340,9 +351,16 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
 
         {/* Footer */}
         <div className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-t border-slate-100 p-4 flex gap-2 rounded-b-3xl">
+          {/* Zeitmarke */}
+          <button onClick={insertTimestampInDescription} title="Zeitmarke einfügen"
+            className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-500 flex items-center justify-center flex-shrink-0 hover:bg-indigo-100 transition-all">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </button>
           <button onClick={handleArchive}
-            className="flex-1 py-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 text-sm font-medium hover:bg-amber-100 transition-all">
-            Archivieren
+            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmArchive ? "bg-amber-500 text-white" : "bg-amber-50 border border-amber-200 text-amber-600"}`}>
+            {confirmArchive ? "Wirklich?" : "Archivieren"}
           </button>
           <button onClick={handleDelete}
             className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmDelete ? "bg-red-500 text-white" : "bg-red-50 border border-red-200 text-red-600"}`}>
