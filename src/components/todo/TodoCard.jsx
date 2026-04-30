@@ -67,7 +67,9 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
               <div className="flex flex-wrap gap-1 mt-2">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>
                 {todo.status && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${STATUS_STYLES[todo.status] || STATUS_STYLES.offen}`}>{todo.status}</span>}
-                {todo.category && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">{todo.category}</span>}
+                {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
+                  <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-500">#{tag}</span>
+                ))}
               </div>
               {todo.deadline && (
                 <p className={`text-[10px] mt-1.5 font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
@@ -104,7 +106,9 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>
           {todo.status && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${STATUS_STYLES[todo.status] || STATUS_STYLES.offen}`}>{todo.status}</span>}
-          {todo.category && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500">{todo.category}</span>}
+          {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
+            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-500">#{tag}</span>
+          ))}
           {todo.deadline && <span className={`text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>📅 {formatDate(todo.deadline)}{isOverdue ? " · überfällig" : ""}</span>}
           {todo.wiedervorlage && <span className="text-[10px] text-purple-500">🔄 {formatDate(todo.wiedervorlage)}</span>}
         </div>

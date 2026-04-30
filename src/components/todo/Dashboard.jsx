@@ -111,7 +111,10 @@ export default function Dashboard() {
       else result = result.filter((t) => t.archived);
       if (filters.statuses?.length) result = result.filter((t) => filters.statuses.includes(t.status));
       if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
-      if (filters.categories?.length) result = result.filter((t) => filters.categories.includes(t.category));
+      if (filters.categories?.length) result = result.filter((t) => {
+        const todoTags = t.tags || (t.category ? [t.category] : []);
+        return filters.categories.some((fc) => todoTags.includes(fc));
+      });
       result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     }
     if (search.trim()) result = result.filter((t) =>

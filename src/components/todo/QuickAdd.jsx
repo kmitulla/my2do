@@ -116,7 +116,7 @@ export default function QuickAdd({ categories, onCreated }) {
   const { user } = useFirebaseAuth();
   const [title, setTitle] = useState("");
   const [prio, setPrio] = useState("B");
-  const [category, setCategory] = useState("");
+  const [tags, setTags] = useState([]);
   const [wiedervorlage, setWiedervorlage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [typing, setTyping] = useState(false);
@@ -217,13 +217,14 @@ export default function QuickAdd({ categories, onCreated }) {
     if (!t || loading) return;
     setLoading(true);
     const newTodo = {
-      title: t, prio, category: category || "",
+      title: t, prio, tags,
       status: "offen", description: "",
       deadline: null,
       wiedervorlage: wiedervorlage || null,
     };
     await addTodo(user.uid, newTodo);
     setTitle("");
+    setTags([]);
     setWiedervorlage(null);
     setLoading(false);
     setTyping(false);
@@ -237,13 +238,14 @@ export default function QuickAdd({ categories, onCreated }) {
     if (!t || loading) return;
     setLoading(true);
     const newTodo = {
-      title: t, prio, category: category || "",
+      title: t, prio, tags,
       status: "offen", description: "",
       deadline: null,
       wiedervorlage: wiedervorlage || null,
     };
     const ref = await addTodo(user.uid, newTodo);
     setTitle("");
+    setTags([]);
     setWiedervorlage(null);
     setLoading(false);
     setTyping(false);
@@ -264,7 +266,7 @@ export default function QuickAdd({ categories, onCreated }) {
         <EmailDropModal
           parsed={emailParsed}
           prio={prio}
-          category={category}
+          tags={tags}
           wiedervorlage={wiedervorlage}
           onCreated={(todo) => {
             setEmailParsed(null);
@@ -370,13 +372,18 @@ export default function QuickAdd({ categories, onCreated }) {
           />
         ))}
 
-        {categories.length > 0 && (
-          <select value={category} onChange={(e) => setCategory(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/80 border border-slate-200 text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-400/50">
-            <option value="">Kategorie…</option>
-            {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
-        )}
+        {categories.length > 0 && categories.map((c) => {
+          const active = tags.includes(c.name);
+          return (
+            <button key={c.id} type="button"
+              onClick={() => setTags(active ? tags.filter((t) => t !== c.name) : [...tags, c.name])}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                active ? "bg-indigo-500 text-white border-indigo-500" : "bg-white/80 text-slate-600 border-slate-200"
+              }`}>
+              {active && "✓ "}#{c.name}
+            </button>
+          );
+        })}
       </div>
 
       {/* Wiedervorlage quick buttons */}

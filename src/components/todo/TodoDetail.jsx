@@ -28,7 +28,7 @@ function toInputDate(ts) {
 
 export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   const { user, userProfile } = useFirebaseAuth();
-  const [form, setForm] = useState({ ...todo });
+  const [form, setForm] = useState({ ...todo, tags: todo.tags || (todo.category ? [todo.category] : []) });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -284,26 +284,46 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             </div>
           </div>
 
-          {/* Category */}
+          {/* Tags */}
           <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Kategorie</label>
-            <div className="flex gap-2">
-              <select value={form.category || ""} onChange={(e) => set("category", e.target.value)}
-                className="flex-1 px-3 py-2.5 rounded-xl bg-white/80 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50">
-                <option value="">Keine Kategorie</option>
-                {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tags</label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {categories.map((c) => {
+                const active = (form.tags || []).includes(c.name);
+                return (
+                  <button key={c.id} type="button"
+                    onClick={() => {
+                      const current = form.tags || [];
+                      set("tags", active ? current.filter((t) => t !== c.name) : [...current, c.name]);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
+                      active ? "bg-indigo-500 text-white border-indigo-500 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                    }`}>
+                    {active && <span className="mr-1">✓</span>}{c.name}
+                  </button>
+                );
+              })}
               <button onClick={() => setShowNewCat(!showNewCat)} type="button"
-                className="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-600 text-sm hover:bg-slate-200 transition-all">
-                + Neu
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition-all">
+                + Neuer Tag
               </button>
             </div>
             {showNewCat && (
-              <div className="flex gap-2 mt-2">
-                <input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Kategoriename"
+              <div className="flex gap-2">
+                <input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Tag-Name"
                   className="flex-1 px-3 py-2 rounded-xl bg-white/80 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
                   onKeyDown={(e) => e.key === "Enter" && addNewCategory()} />
                 <button onClick={addNewCategory} className="px-3 py-2 rounded-xl bg-blue-500 text-white text-sm">OK</button>
+              </div>
+            )}
+            {(form.tags || []).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {(form.tags || []).map((t) => (
+                  <span key={t} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-600 text-[11px] font-medium">
+                    #{t}
+                    <button type="button" onClick={() => set("tags", (form.tags || []).filter((x) => x !== t))} className="text-indigo-400 hover:text-indigo-600 leading-none">✕</button>
+                  </span>
+                ))}
               </div>
             )}
           </div>

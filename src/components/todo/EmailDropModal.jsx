@@ -6,7 +6,7 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
  * Shown when an .eml / .msg file (or text/html drag from Outlook) is dropped.
  * Parses headers and body, asks user whether Subject → Title.
  */
-export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B", category = "", wiedervorlage = null }) {
+export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B", tags = [], wiedervorlage = null }) {
   const { user } = useFirebaseAuth();
   // If no subject was detected, always show free-text title field
   const [useSubjectAsTitle, setUseSubjectAsTitle] = useState(!!parsed.subject);
@@ -33,7 +33,7 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
       description: buildDescription(),
       prio,
       status: "offen",
-      category: category || "",
+      tags: tags || [],
       deadline: null,
       wiedervorlage: wiedervorlage || null,
       archived: false,

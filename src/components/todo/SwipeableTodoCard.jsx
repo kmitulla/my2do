@@ -368,7 +368,9 @@ export default function SwipeableTodoCard({ todo, onClick }) {
             {todo.title}
           </p>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {todo.category && <span className="text-[10px] text-slate-400">{todo.category}</span>}
+            {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
+                <span key={tag} className="text-[10px] text-indigo-400">#{tag}</span>
+              ))}
             {todo.deadline && (
               <span className={`flex items-center gap-0.5 text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
                 {isOverdue ? <IconWarning /> : <IconCalendar />}

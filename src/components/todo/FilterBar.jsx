@@ -193,7 +193,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
           {/* Category */}
           {categories.length > 0 && (
             <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Kategorie <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tags <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
               <div className="flex flex-wrap gap-1.5">
                 {categories.map((c) => {
                   const active = filters.categories?.includes(c.name);
