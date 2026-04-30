@@ -98,9 +98,9 @@ export default function SettingsPanel({ categories, onCategoryDeleted }) {
 
       {/* Categories */}
       <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
-        <h3 className="text-sm font-semibold text-slate-700 mb-2">Kategorien verwalten</h3>
+        <h3 className="text-sm font-semibold text-slate-700 mb-2">Tags verwalten</h3>
         {categories.length === 0 ? (
-          <p className="text-xs text-slate-400">Keine Kategorien vorhanden.</p>
+          <p className="text-xs text-slate-400">Keine Tags vorhanden.</p>
         ) : (
           <div className="space-y-2">
             {categories.map((c) => (

@@ -195,6 +195,10 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tags <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
               <div className="flex flex-wrap gap-1.5">
+                <button onClick={() => toggleMulti("categories", "__no_tag__")}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${filters.categories?.includes("__no_tag__") ? "bg-slate-600 text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}>
+                  Ohne Tag
+                </button>
                 {categories.map((c) => {
                   const active = filters.categories?.includes(c.name);
                   return (

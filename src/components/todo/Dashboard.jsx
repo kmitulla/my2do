@@ -113,7 +113,9 @@ export default function Dashboard() {
       if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
       if (filters.categories?.length) result = result.filter((t) => {
         const todoTags = t.tags || (t.category ? [t.category] : []);
-        return filters.categories.some((fc) => todoTags.includes(fc));
+        return filters.categories.some((fc) =>
+          fc === "__no_tag__" ? todoTags.length === 0 : todoTags.includes(fc)
+        );
       });
       result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     }
