@@ -1,5 +1,5 @@
 import React from "react";
-import { format } from "date-fns";
+import { format, getISOWeek } from "date-fns";
 
 // Quick +N day buttons + calendar icon for date picking
 // value: Firestore Timestamp | Date | string | null
@@ -90,6 +90,7 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
       {current && (
         <div className="text-[11px] text-indigo-500 font-medium pl-0.5">
           {withTime ? format(current, "dd.MM.yyyy HH:mm") : format(current, "dd.MM.yyyy")}
+          <span className="ml-1.5 text-slate-400 font-normal">KW {getISOWeek(current)}</span>
         </div>
       )}
     </div>
