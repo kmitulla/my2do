@@ -40,9 +40,10 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
     closing:  { opacity: 0 },
   }[phase];
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
   const sheetStyle = {
     entering: {
-      transform: "translateY(100%) scale(0.96)",
+      transform: isMobile ? "translateY(100%) scale(0.96)" : "translateY(16px) scale(0.97)",
       opacity: 0,
     },
     open: {
@@ -50,7 +51,7 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
       opacity: 1,
     },
     closing: {
-      transform: "translateY(100%) scale(0.96)",
+      transform: isMobile ? "translateY(100%) scale(0.96)" : "translateY(16px) scale(0.97)",
       opacity: 0,
     },
   }[phase];
@@ -79,7 +80,7 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
 
       {/* Sheet */}
       <div
-        className="relative w-full sm:max-w-lg"
+        className="relative w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl"
         style={{
           transition,
           willChange: "transform, opacity",
