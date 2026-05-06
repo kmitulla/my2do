@@ -327,6 +327,52 @@ function NotebookNode({ uid, notebook, selectedPage, onSelectPage }) {
   );
 }
 
+// ── Mobile Page Modal ─────────────────────────────────────────────────────────
+function PageModal({ uid, selectedPage, onClose }) {
+  const [fullscreen, setFullscreen] = useState(false);
+
+  if (fullscreen) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
+        <PageEditor
+          uid={uid}
+          bookId={selectedPage.bookId}
+          sectionId={selectedPage.sectionId}
+          page={selectedPage.page}
+          fullscreen={true}
+          onToggleFullscreen={() => setFullscreen(false)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(12px)" }}>
+      <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col" style={{ maxHeight: "92vh" }}>
+        <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
+          <div className="w-10 h-1 rounded-full bg-slate-300" />
+        </div>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 flex-shrink-0">
+          <span className="text-sm font-semibold text-slate-700 truncate">{selectedPage.page.title}</span>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <PageEditor
+            uid={uid}
+            bookId={selectedPage.bookId}
+            sectionId={selectedPage.sectionId}
+            page={selectedPage.page}
+            fullscreen={false}
+            onToggleFullscreen={() => setFullscreen(true)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main NotesPanel ───────────────────────────────────────────────────────────
 export default function NotesPanel() {
   const { user } = useFirebaseAuth();
@@ -335,6 +381,15 @@ export default function NotesPanel() {
   const [addingBook, setAddingBook] = useState(false);
   const [newBookName, setNewBookName] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+
+  // Reactive mobile detection
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   useEffect(() => subscribeNotebooks(user.uid, setNotebooks), [user.uid]);
 
@@ -345,8 +400,8 @@ export default function NotesPanel() {
     setNewBookName(""); setAddingBook(false);
   };
 
-  // Fullscreen overlay
-  if (fullscreen && selectedPage) {
+  // Desktop fullscreen overlay
+  if (!isMobile && fullscreen && selectedPage) {
     return (
       <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
         <PageEditor
@@ -361,40 +416,59 @@ export default function NotesPanel() {
     );
   }
 
-  return (
-    <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 220px)", maxHeight: "900px" }}>
-      {/* Sidebar */}
-      <div className="w-52 xl:w-64 flex-shrink-0 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 flex-shrink-0">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Notizbücher</span>
-          <button onClick={() => setAddingBook(!addingBook)}
-            className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center hover:bg-indigo-200 transition-all">
-            <PlusIcon />
-          </button>
-        </div>
-
-        {addingBook && (
-          <div className="flex gap-1 items-center px-2 py-2 border-b border-slate-100">
-            <input value={newBookName} onChange={(e) => setNewBookName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAddBook(); if (e.key === "Escape") { setAddingBook(false); setNewBookName(""); } }}
-              placeholder="Notizbuchname…" autoFocus
-              className="flex-1 px-2 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
-            <button onClick={handleAddBook} className="px-2 py-1.5 rounded-xl bg-indigo-500 text-white text-xs">↵</button>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
-          {notebooks.length === 0 && !addingBook && (
-            <p className="text-[11px] text-slate-400 px-2 py-3 text-center">Klick auf + um dein erstes Notizbuch zu erstellen.</p>
-          )}
-          {notebooks.map((nb) => (
-            <NotebookNode key={nb.id} uid={user.uid} notebook={nb}
-              selectedPage={selectedPage} onSelectPage={setSelectedPage} />
-          ))}
-        </div>
+  const sidebarContent = (
+    <>
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 flex-shrink-0">
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Notizbücher</span>
+        <button onClick={() => setAddingBook(!addingBook)}
+          className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center hover:bg-indigo-200 transition-all">
+          <PlusIcon />
+        </button>
       </div>
 
-      {/* Editor */}
+      {addingBook && (
+        <div className="flex gap-1 items-center px-2 py-2 border-b border-slate-100">
+          <input value={newBookName} onChange={(e) => setNewBookName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleAddBook(); if (e.key === "Escape") { setAddingBook(false); setNewBookName(""); } }}
+            placeholder="Notizbuchname…" autoFocus
+            className="flex-1 px-2 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+          <button onClick={handleAddBook} className="px-2 py-1.5 rounded-xl bg-indigo-500 text-white text-xs">↵</button>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+        {notebooks.length === 0 && !addingBook && (
+          <p className="text-[11px] text-slate-400 px-2 py-3 text-center">Klick auf + um dein erstes Notizbuch zu erstellen.</p>
+        )}
+        {notebooks.map((nb) => (
+          <NotebookNode key={nb.id} uid={user.uid} notebook={nb}
+            selectedPage={selectedPage} onSelectPage={setSelectedPage} />
+        ))}
+      </div>
+    </>
+  );
+
+  // ── Mobile: full-width sidebar + modal on page tap
+  if (isMobile) {
+    return (
+      <>
+        <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 flex flex-col overflow-hidden" style={{ minHeight: "70vh" }}>
+          {sidebarContent}
+        </div>
+        {selectedPage && (
+          <PageModal uid={user.uid} selectedPage={selectedPage} onClose={() => setSelectedPage(null)} />
+        )}
+      </>
+    );
+  }
+
+  // ── Desktop: sidebar + inline editor
+  return (
+    <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 220px)", maxHeight: "900px" }}>
+      <div className="w-52 xl:w-64 flex-shrink-0 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 flex flex-col overflow-hidden">
+        {sidebarContent}
+      </div>
+
       <div className="flex-1 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 overflow-hidden flex flex-col">
         {selectedPage ? (
           <PageEditor

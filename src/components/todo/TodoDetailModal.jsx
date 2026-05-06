@@ -21,7 +21,10 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
     if (closeRef.current) return;
     closeRef.current = true;
     setPhase("closing");
-    setTimeout(onClose, 380);
+    setTimeout(() => {
+      closeRef.current = false;
+      onClose();
+    }, 380);
   };
 
   const handleDelete = () => {
@@ -29,6 +32,7 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
     closeRef.current = true;
     setPhase("closing");
     setTimeout(() => {
+      closeRef.current = false;
       onDelete?.();
       onClose();
     }, 380);
