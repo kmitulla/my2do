@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
-import { subscribeCategories, addTodo, addCategory } from "@/lib/todoService";
+import { subscribeCategories, addTodo, addCategory, getAllNotebookData, addNotebook, addSection, addPage } from "@/lib/todoService";
 
 function toDate(ts) {
   if (!ts) return null;
@@ -106,14 +106,16 @@ function serializeTodo(t) {
   };
 }
 
-function exportMy2do(todos, categories) {
+async function exportMy2do(uid, todos, categories) {
+  const notebooks = await getAllNotebookData(uid);
   const payload = {
     magic: MY2DO_MAGIC,
     version: MY2DO_VERSION,
     exportedAt: new Date().toISOString(),
-    stats: { todos: todos.length, categories: categories.length },
+    stats: { todos: todos.length, categories: categories.length, notebooks: notebooks.length },
     categories: categories.map((c) => ({ name: c.name, color: c.color || "#6366f1" })),
     todos: todos.map(serializeTodo),
+    notebooks,
   };
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -127,6 +129,7 @@ function exportMy2do(todos, categories) {
 
 export default function ExportPanel({ todos, categories }) {
   const { user } = useFirebaseAuth();
+  const [exporting, setExporting] = useState(false);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
@@ -176,7 +179,20 @@ export default function ExportPanel({ todos, categories }) {
         todosImported++;
       }
 
-      setImportResult({ ok: true, todos: todosImported, cats: catsImported });
+      // Import notebooks
+      let notebooksImported = 0;
+      for (const nb of (data.notebooks || [])) {
+        const nbRef = await addNotebook(user.uid, nb.name || "Notizbuch");
+        for (const sec of (nb.sections || [])) {
+          const secRef = await addSection(user.uid, nbRef.id, sec.name || "Abschnitt", null);
+          for (const pg of (sec.pages || [])) {
+            await addPage(user.uid, nbRef.id, secRef.id, pg.title || "Seite");
+          }
+        }
+        notebooksImported++;
+      }
+
+      setImportResult({ ok: true, todos: todosImported, cats: catsImported, notebooks: notebooksImported });
     } catch (err) {
       setImportResult({ ok: false, error: err.message });
     } finally {
@@ -200,11 +216,12 @@ export default function ExportPanel({ todos, categories }) {
 
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => exportMy2do(todos, categories)}
-            disabled={todos.length === 0}
+            onClick={async () => { setExporting(true); await exportMy2do(user.uid, todos, categories); setExporting(false); }}
+            disabled={exporting}
             className="py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-semibold shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-[1.02] transition-all disabled:opacity-40 flex items-center justify-center gap-2"
           >
-            <span>⬆</span> Exportieren
+            {exporting ? <span className="animate-spin">⟳</span> : <span>⬆</span>}
+            {exporting ? "Lädt…" : "Exportieren"}
           </button>
           <button
             onClick={() => fileRef.current?.click()}
@@ -220,7 +237,7 @@ export default function ExportPanel({ todos, categories }) {
         {importResult && (
           <div className={`rounded-xl px-3 py-2.5 text-sm font-medium flex items-center gap-2 ${importResult.ok ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-red-50 border border-red-200 text-red-600"}`}>
             {importResult.ok
-              ? `✓ ${importResult.todos} Aufgaben & ${importResult.cats} Kategorien importiert!`
+              ? `✓ ${importResult.todos} Aufgaben, ${importResult.cats} Kategorien & ${importResult.notebooks ?? 0} Notizbücher importiert!`
               : `✕ Fehler: ${importResult.error}`}
           </div>
         )}

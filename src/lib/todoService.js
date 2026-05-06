@@ -138,6 +138,70 @@ export const getAllUsers = async () => {
 export const upsertUserProfile = (uid, data) =>
   setDoc(doc(db, "userProfiles", uid), data, { merge: true });
 
+// --- NOTEBOOKS (Notes) ---
+export const notebooksCol = (uid) => collection(db, "users", uid, "notebooks");
+export const sectionsCol = (uid, bookId) => collection(db, "users", uid, "notebooks", bookId, "sections");
+export const pagesCol = (uid, bookId, sectionId) => collection(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages");
+
+export const addNotebook = (uid, name) =>
+  addDoc(notebooksCol(uid), { name, userId: uid, createdAt: serverTimestamp() });
+
+export const updateNotebook = (uid, id, data) =>
+  updateDoc(doc(db, "users", uid, "notebooks", id), data);
+
+export const deleteNotebook = (uid, id) =>
+  deleteDoc(doc(db, "users", uid, "notebooks", id));
+
+export const subscribeNotebooks = (uid, callback) => {
+  const q = query(notebooksCol(uid), orderBy("createdAt", "asc"));
+  return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+};
+
+export const addSection = (uid, bookId, name, parentSectionId = null) =>
+  addDoc(sectionsCol(uid, bookId), { name, parentSectionId, userId: uid, createdAt: serverTimestamp() });
+
+export const updateSection = (uid, bookId, sectionId, data) =>
+  updateDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId), data);
+
+export const deleteSection = (uid, bookId, sectionId) =>
+  deleteDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId));
+
+export const subscribeSections = (uid, bookId, callback) => {
+  const q = query(sectionsCol(uid, bookId), orderBy("createdAt", "asc"));
+  return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+};
+
+export const addPage = (uid, bookId, sectionId, title) =>
+  addDoc(pagesCol(uid, bookId, sectionId), { title, content: "", userId: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+
+export const updatePage = (uid, bookId, sectionId, pageId, data) =>
+  updateDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId), { ...data, updatedAt: serverTimestamp() });
+
+export const deletePage = (uid, bookId, sectionId, pageId) =>
+  deleteDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId));
+
+export const subscribePages = (uid, bookId, sectionId, callback) => {
+  const q = query(pagesCol(uid, bookId, sectionId), orderBy("createdAt", "asc"));
+  return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+};
+
+export const getAllNotebookData = async (uid) => {
+  const booksSnap = await getDocs(notebooksCol(uid));
+  const books = [];
+  for (const bDoc of booksSnap.docs) {
+    const book = { id: bDoc.id, ...bDoc.data(), sections: [] };
+    const sectSnap = await getDocs(sectionsCol(uid, bDoc.id));
+    for (const sDoc of sectSnap.docs) {
+      const section = { id: sDoc.id, ...sDoc.data(), pages: [] };
+      const pagesSnap = await getDocs(pagesCol(uid, bDoc.id, sDoc.id));
+      section.pages = pagesSnap.docs.map((p) => ({ id: p.id, ...p.data() }));
+      book.sections.push(section);
+    }
+    books.push(book);
+  }
+  return books;
+};
+
 // --- FILTER PRESETS (synced per user in Firestore) ---
 export const filterPresetsDoc = (uid) => doc(db, "users", uid, "settings", "filterPresets");
 

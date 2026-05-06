@@ -4,8 +4,9 @@ import { deleteCategory } from "@/lib/todoService";
 import { updatePassword } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
+import ExportPanel from "./ExportPanel";
 
-export default function SettingsPanel({ categories, onCategoryDeleted }) {
+export default function SettingsPanel({ categories, todos, onCategoryDeleted }) {
   const { user, userProfile, logout } = useFirebaseAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmCatDelete, setConfirmCatDelete] = useState(null);
@@ -114,6 +115,12 @@ export default function SettingsPanel({ categories, onCategoryDeleted }) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Export & Backup */}
+      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">Export & Backup</h3>
+        <ExportPanel todos={todos} categories={categories} />
       </div>
 
       {/* Logout */}
