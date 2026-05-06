@@ -143,9 +143,9 @@ export default function Dashboard() {
   };
   const tabs = [
     { label: "Aufgaben" },
+    { label: "Notizen" },
     { label: "Übersicht" },
     { label: "Inbox", badge: inboxCount },
-    { label: "Notizen" },
     ...(isAdmin ? [{ label: "Admin" }] : []),
     { label: "Einstell." },
   ];
@@ -154,7 +154,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100" style={{ overflowY: "auto" }}>
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-white/60 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md flex-shrink-0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
@@ -204,7 +204,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto px-4 pb-28">
+      <div className="max-w-5xl mx-auto px-4 pb-28">
         {/* Tab Nav */}
         <div className="flex gap-1 mt-4 bg-white/50 backdrop-blur-xl rounded-2xl p-1 border border-white/60 overflow-x-auto no-scrollbar">
           {tabs.map((tab, i) => (
@@ -277,9 +277,9 @@ export default function Dashboard() {
             </>
           )}
 
-          {activeTab === 1 && <OverviewPanel todos={todos} />}
-          {activeTab === 2 && <InboxPanel />}
-          {activeTab === 3 && <NotesPanel />}
+          {activeTab === 1 && <NotesPanel />}
+          {activeTab === 2 && <OverviewPanel todos={todos} />}
+          {activeTab === 3 && <InboxPanel />}
           {activeTab === 4 && isAdmin && <AdminPanel />}
           {activeTab === (isAdmin ? 5 : 4) && <SettingsPanel categories={categories} todos={todos} />}
         </div>

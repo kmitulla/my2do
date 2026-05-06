@@ -5,10 +5,9 @@ import {
   subscribeSections, addSection, updateSection, deleteSection,
   subscribePages, addPage, updatePage, deletePage,
 } from "@/lib/todoService";
-import { format } from "date-fns";
-import { de } from "date-fns/locale";
+import RichEditor from "./RichEditor";
 
-// ── tiny icon helpers ────────────────────────────────────────────────────────
+// ── SVG Icons ─────────────────────────────────────────────────────────────────
 const ChevronIcon = ({ open }) => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
     strokeLinecap="round" strokeLinejoin="round"
@@ -17,7 +16,7 @@ const ChevronIcon = ({ open }) => (
   </svg>
 );
 const TrashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
   </svg>
 );
@@ -26,87 +25,118 @@ const PlusIcon = () => (
     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
   </svg>
 );
+const BookIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+  </svg>
+);
+const FolderIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  </svg>
+);
+const FileIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+  </svg>
+);
+const FullscreenIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+  </svg>
+);
+const ExitFullscreenIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+  </svg>
+);
+const SubsectionIcon = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+);
 
-// ── Inline editable title ────────────────────────────────────────────────────
+// ── Inline editable title ─────────────────────────────────────────────────────
 function InlineEdit({ value, onSave, className = "" }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(value);
   const ref = useRef(null);
   useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
   useEffect(() => { setVal(value); }, [value]);
-  const save = () => { setEditing(false); if (val.trim() && val.trim() !== value) onSave(val.trim()); else setVal(value); };
+  const save = () => {
+    setEditing(false);
+    if (val.trim() && val.trim() !== value) onSave(val.trim());
+    else setVal(value);
+  };
   if (editing) return (
     <input ref={ref} value={val} onChange={(e) => setVal(e.target.value)}
-      onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setVal(value); setEditing(false); } }}
+      onBlur={save}
+      onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setVal(value); setEditing(false); } }}
       className={`bg-transparent border-b border-indigo-400 outline-none w-full ${className}`} />
   );
-  return <span onDoubleClick={() => setEditing(true)} className={`cursor-pointer ${className}`} title="Doppelklick zum Umbenennen">{value}</span>;
+  return (
+    <span onDoubleClick={() => setEditing(true)} className={`cursor-pointer ${className}`} title="Doppelklick zum Umbenennen">
+      {value}
+    </span>
+  );
 }
 
-// ── Page Editor ──────────────────────────────────────────────────────────────
-function PageEditor({ uid, bookId, sectionId, page }) {
+// ── Page Editor ───────────────────────────────────────────────────────────────
+function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen }) {
   const [content, setContent] = useState(page.content || "");
   const [saved, setSaved] = useState(true);
   const timerRef = useRef(null);
-  const editorRef = useRef(null);
+  const richEditorRef = useRef(null);
 
-  useEffect(() => { setContent(page.content || ""); setSaved(true); }, [page.id]);
+  useEffect(() => {
+    setContent(page.content || "");
+    setSaved(true);
+  }, [page.id]);
 
-  const handleChange = (e) => {
-    setContent(e.target.value);
+  const handleChange = useCallback((val) => {
+    setContent(val);
     setSaved(false);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
-      await updatePage(uid, bookId, sectionId, page.id, { content: e.target.value });
+      await updatePage(uid, bookId, sectionId, page.id, { content: val });
       setSaved(true);
     }, 800);
-  };
-
-  const insertTimestamp = () => {
-    const ts = format(new Date(), "dd.MM.yyyy HH:mm", { locale: de });
-    const ta = editorRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const newVal = content.slice(0, start) + `[${ts}] ` + content.slice(end);
-    setContent(newVal);
-    setSaved(false);
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(async () => {
-      await updatePage(uid, bookId, sectionId, page.id, { content: newVal });
-      setSaved(true);
-    }, 800);
-    setTimeout(() => {
-      ta.selectionStart = ta.selectionEnd = start + ts.length + 3;
-      ta.focus();
-    }, 10);
-  };
+  }, [uid, bookId, sectionId, page.id]);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
-        <span className="text-xs text-slate-400 font-medium">{page.title}</span>
-        <div className="flex items-center gap-2">
-          <button onClick={insertTimestamp}
-            className="text-[10px] px-2 py-1 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-100 transition-all font-medium flex items-center gap-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            Zeitmarke
-          </button>
-          <span className={`text-[10px] font-medium transition-colors ${saved ? "text-emerald-400" : "text-amber-400"}`}>
+      {/* Page toolbar */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 flex-shrink-0 gap-2">
+        <span className="text-xs font-semibold text-slate-600 truncate flex-1">{page.title}</span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className={`text-[10px] font-medium transition-colors ${saved ? "text-emerald-500" : "text-amber-400"}`}>
             {saved ? "✓ gespeichert" : "● speichert…"}
           </span>
+          <button
+            onClick={onToggleFullscreen}
+            title={fullscreen ? "Vollbild beenden" : "Vollbild"}
+            className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all"
+          >
+            {fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+          </button>
         </div>
       </div>
-      <textarea ref={editorRef} value={content} onChange={handleChange}
-        placeholder="Hier tippen…"
-        className="flex-1 w-full p-3 text-sm text-slate-700 bg-transparent resize-none focus:outline-none leading-relaxed min-h-[200px]" />
+
+      {/* RichEditor */}
+      <div className="flex-1 overflow-y-auto p-3">
+        <RichEditor
+          ref={richEditorRef}
+          value={content}
+          onChange={handleChange}
+          placeholder="Hier tippen… (Strg+T für Zeitmarke)"
+          minHeight={fullscreen ? 600 : 300}
+        />
+      </div>
     </div>
   );
 }
 
-// ── Section tree (recursive) ─────────────────────────────────────────────────
+// ── Section tree (recursive) ──────────────────────────────────────────────────
 function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPage, onSelectPage }) {
   const [open, setOpen] = useState(false);
   const [pages, setPages] = useState([]);
@@ -126,7 +156,7 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
   const handleAddPage = async () => {
     const t = newPageTitle.trim();
     if (!t) return;
-    const ref = await addPage(uid, bookId, section.id, t);
+    await addPage(uid, bookId, section.id, t);
     setNewPageTitle(""); setAddingPage(false);
   };
 
@@ -142,18 +172,15 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
     await deleteSection(uid, bookId, section.id);
   };
 
-  const indent = depth * 12;
+  const indent = depth * 10;
 
   return (
     <div style={{ marginLeft: indent }}>
-      {/* Section header */}
-      <div className={`flex items-center gap-1 px-2 py-1.5 rounded-xl group cursor-pointer hover:bg-slate-100/80 transition-all`}>
+      <div className="flex items-center gap-1 px-2 py-1.5 rounded-xl group cursor-pointer hover:bg-slate-100/80 transition-all">
         <button onClick={() => setOpen(!open)} className="text-slate-400 flex-shrink-0 w-4 h-4 flex items-center justify-center">
           <ChevronIcon open={open} />
         </button>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
+        <span className="text-slate-400 flex-shrink-0"><FolderIcon /></span>
         <InlineEdit value={section.name}
           onSave={(name) => updateSection(uid, bookId, section.id, { name })}
           className="text-xs font-medium text-slate-700 flex-1 min-w-0" />
@@ -163,7 +190,9 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
             <PlusIcon />
           </button>
           <button onClick={() => setAddingSubsection(!addingSubsection)} title="Unterabschnitt"
-            className="w-5 h-5 rounded-md bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 text-[10px]">↳</button>
+            className="w-5 h-5 rounded-md bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200">
+            <SubsectionIcon />
+          </button>
           <button onClick={handleDeleteSection}
             className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${confirmDel ? "bg-red-500 text-white" : "bg-red-50 text-red-400 hover:bg-red-100"}`}>
             <TrashIcon />
@@ -171,12 +200,11 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
         </div>
       </div>
 
-      {/* Add subsection input */}
       {addingSubsection && (
         <div style={{ marginLeft: 16 + indent }} className="flex gap-1 items-center py-1 pr-2">
           <input value={newSubName} onChange={(e) => setNewSubName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleAddSubsection(); if (e.key === "Escape") { setAddingSubsection(false); setNewSubName(""); } }}
-            placeholder="Unterabschnitt Name…" autoFocus
+            placeholder="Unterabschnitt…" autoFocus
             className="flex-1 px-2 py-1 rounded-lg bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
           <button onClick={handleAddSubsection} className="px-2 py-1 rounded-lg bg-slate-500 text-white text-xs">↵</button>
         </div>
@@ -184,24 +212,24 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
 
       {open && (
         <div>
-          {/* Pages */}
           {pages.map((p) => (
             <button key={p.id} onClick={() => onSelectPage({ page: p, bookId, sectionId: section.id })}
               className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-xl text-left group transition-all ${
                 selectedPage?.page.id === p.id ? "bg-indigo-100 text-indigo-700" : "hover:bg-slate-100/80 text-slate-600"
               }`} style={{ marginLeft: 16 }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="flex-shrink-0">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-              </svg>
+              <span className="flex-shrink-0 text-slate-400"><FileIcon /></span>
               <span className="text-xs flex-1 truncate">{p.title}</span>
-              <button onClick={async (e) => { e.stopPropagation(); await deletePage(uid, bookId, section.id, p.id); if (selectedPage?.page.id === p.id) onSelectPage(null); }}
+              <button onClick={async (e) => {
+                e.stopPropagation();
+                await deletePage(uid, bookId, section.id, p.id);
+                if (selectedPage?.page.id === p.id) onSelectPage(null);
+              }}
                 className="opacity-0 group-hover:opacity-100 w-4 h-4 rounded flex items-center justify-center bg-red-50 text-red-400 hover:bg-red-100 flex-shrink-0">
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </button>
           ))}
 
-          {/* Add page input */}
           {addingPage && (
             <div style={{ marginLeft: 16 }} className="flex gap-1 items-center py-1 pr-2">
               <input value={newPageTitle} onChange={(e) => setNewPageTitle(e.target.value)}
@@ -212,7 +240,6 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
             </div>
           )}
 
-          {/* Child sections (recursive) */}
           {children.map((child) => (
             <SectionNode key={child.id} uid={uid} bookId={bookId} section={child}
               allSections={allSections} depth={depth + 1}
@@ -224,7 +251,7 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
   );
 }
 
-// ── Notebook node ────────────────────────────────────────────────────────────
+// ── Notebook node ─────────────────────────────────────────────────────────────
 function NotebookNode({ uid, notebook, selectedPage, onSelectPage }) {
   const [open, setOpen] = useState(false);
   const [sections, setSections] = useState([]);
@@ -257,7 +284,7 @@ function NotebookNode({ uid, notebook, selectedPage, onSelectPage }) {
         <button onClick={() => setOpen(!open)} className="text-indigo-400 flex-shrink-0">
           <ChevronIcon open={open} />
         </button>
-        <span className="text-base">📔</span>
+        <span className="text-indigo-400 flex-shrink-0"><BookIcon /></span>
         <InlineEdit value={notebook.name}
           onSave={(name) => updateNotebook(uid, notebook.id, { name })}
           className="text-sm font-semibold text-slate-800 flex-1 min-w-0" />
@@ -300,13 +327,14 @@ function NotebookNode({ uid, notebook, selectedPage, onSelectPage }) {
   );
 }
 
-// ── Main NotesPanel ──────────────────────────────────────────────────────────
+// ── Main NotesPanel ───────────────────────────────────────────────────────────
 export default function NotesPanel() {
   const { user } = useFirebaseAuth();
   const [notebooks, setNotebooks] = useState([]);
-  const [selectedPage, setSelectedPage] = useState(null); // { page, bookId, sectionId }
+  const [selectedPage, setSelectedPage] = useState(null);
   const [addingBook, setAddingBook] = useState(false);
   const [newBookName, setNewBookName] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => subscribeNotebooks(user.uid, setNotebooks), [user.uid]);
 
@@ -317,12 +345,28 @@ export default function NotesPanel() {
     setNewBookName(""); setAddingBook(false);
   };
 
+  // Fullscreen overlay
+  if (fullscreen && selectedPage) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
+        <PageEditor
+          uid={user.uid}
+          bookId={selectedPage.bookId}
+          sectionId={selectedPage.sectionId}
+          page={selectedPage.page}
+          fullscreen={true}
+          onToggleFullscreen={() => setFullscreen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex gap-3 h-full" style={{ minHeight: "60vh" }}>
+    <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 220px)", maxHeight: "900px" }}>
       {/* Sidebar */}
-      <div className="w-56 flex-shrink-0 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-2 flex flex-col gap-2 overflow-y-auto">
-        <div className="flex items-center justify-between px-2 py-1">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Notizbücher</span>
+      <div className="w-52 xl:w-64 flex-shrink-0 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 flex-shrink-0">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Notizbücher</span>
           <button onClick={() => setAddingBook(!addingBook)}
             className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center hover:bg-indigo-200 transition-all">
             <PlusIcon />
@@ -330,7 +374,7 @@ export default function NotesPanel() {
         </div>
 
         {addingBook && (
-          <div className="flex gap-1 items-center px-1">
+          <div className="flex gap-1 items-center px-2 py-2 border-b border-slate-100">
             <input value={newBookName} onChange={(e) => setNewBookName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleAddBook(); if (e.key === "Escape") { setAddingBook(false); setNewBookName(""); } }}
               placeholder="Notizbuchname…" autoFocus
@@ -339,9 +383,9 @@ export default function NotesPanel() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto space-y-0.5">
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
           {notebooks.length === 0 && !addingBook && (
-            <p className="text-[11px] text-slate-400 px-2 py-2">Klick auf + um dein erstes Notizbuch zu erstellen.</p>
+            <p className="text-[11px] text-slate-400 px-2 py-3 text-center">Klick auf + um dein erstes Notizbuch zu erstellen.</p>
           )}
           {notebooks.map((nb) => (
             <NotebookNode key={nb.id} uid={user.uid} notebook={nb}
@@ -351,19 +395,27 @@ export default function NotesPanel() {
       </div>
 
       {/* Editor */}
-      <div className="flex-1 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 overflow-hidden">
+      <div className="flex-1 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 overflow-hidden flex flex-col">
         {selectedPage ? (
           <PageEditor
             uid={user.uid}
             bookId={selectedPage.bookId}
             sectionId={selectedPage.sectionId}
             page={selectedPage.page}
+            fullscreen={false}
+            onToggleFullscreen={() => setFullscreen(true)}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-center px-6 py-12">
             <div>
-              <div className="text-5xl mb-4">📝</div>
-              <p className="text-slate-400 text-sm">Wähle eine Seite aus der linken Leiste aus oder erstelle ein neues Notizbuch.</p>
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                </svg>
+              </div>
+              <p className="text-slate-500 text-sm font-medium mb-1">Keine Seite ausgewählt</p>
+              <p className="text-slate-400 text-xs">Wähle eine Seite aus der linken Leiste oder erstelle ein neues Notizbuch.</p>
             </div>
           </div>
         )}
