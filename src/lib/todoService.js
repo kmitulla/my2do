@@ -5,6 +5,7 @@ import {
   updateDoc,
   deleteDoc,
   doc,
+  getDoc,
   setDoc,
   query,
   where,
@@ -125,7 +126,6 @@ export const dismissInboxItem = (uid, inboxItemId) =>
   deleteDoc(doc(db, "users", uid, "inbox", inboxItemId));
 
 export const getSharedTodo = async (sharedTodoId) => {
-  const { getDoc } = await import("firebase/firestore");
   const snap = await getDoc(doc(db, "sharedTodos", sharedTodoId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 };
@@ -200,6 +200,50 @@ export const getAllNotebookData = async (uid) => {
     books.push(book);
   }
   return books;
+};
+
+// --- NOTES TREE STATE (expanded nodes, synced per user) ---
+export const notesTreeStateDoc = (uid) => doc(db, "users", uid, "settings", "notesTreeState");
+
+export const saveNotesTreeState = (uid, openIds) =>
+  setDoc(notesTreeStateDoc(uid), { openIds }, { merge: false });
+
+export const getNotesTreeState = async (uid) => {
+  const snap = await getDoc(notesTreeStateDoc(uid));
+  return snap.exists() ? (snap.data().openIds || []) : [];
+};
+
+// copy a page to another section
+export const copyPage = async (uid, fromBookId, fromSectionId, pageId, toBookId, toSectionId) => {
+  const srcDoc = await getDoc(doc(db, "users", uid, "notebooks", fromBookId, "sections", fromSectionId, "pages", pageId));
+  if (!srcDoc.exists()) return;
+  const data = srcDoc.data();
+  await addDoc(pagesCol(uid, toBookId, toSectionId), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+};
+
+// move a page to another section (copy + delete)
+export const movePage = async (uid, fromBookId, fromSectionId, pageId, toBookId, toSectionId) => {
+  await copyPage(uid, fromBookId, fromSectionId, pageId, toBookId, toSectionId);
+  await deletePage(uid, fromBookId, fromSectionId, pageId);
+};
+
+// copy a section (and its pages) to another notebook
+export const copySection = async (uid, fromBookId, sectionId, toBookId, parentSectionId = null) => {
+  const srcDoc = await getDoc(doc(db, "users", uid, "notebooks", fromBookId, "sections", sectionId));
+  if (!srcDoc.exists()) return;
+  const data = srcDoc.data();
+  const newRef = await addDoc(sectionsCol(uid, toBookId), { ...data, parentSectionId, createdAt: serverTimestamp() });
+  const pagesSnap = await getDocs(pagesCol(uid, fromBookId, sectionId));
+  for (const p of pagesSnap.docs) {
+    const pd = p.data();
+    await addDoc(pagesCol(uid, toBookId, newRef.id), { ...pd, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  }
+};
+
+// move a section to another notebook
+export const moveSection = async (uid, fromBookId, sectionId, toBookId) => {
+  await copySection(uid, fromBookId, sectionId, toBookId, null);
+  await deleteSection(uid, fromBookId, sectionId);
 };
 
 // --- FILTER PRESETS (synced per user in Firestore) ---
