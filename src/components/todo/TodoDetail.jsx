@@ -146,7 +146,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
     const pad = (n) => String(n).padStart(2, "0");
     const fmtIcs = (d) => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
     const cleanDesc = (form.description || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/\n/g, "\\n");
-    const notes = `Priorität: ${form.prio || "B"}\\nStatus: ${form.status || "offen"}\\nKategorie: ${form.category || "–"}\\nDeadline: ${form.deadline ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}\\n\\n${cleanDesc}`;
+    const manualStatusLine = form.manualStatus ? `\\nEigener Status: ${form.manualStatus}` : "";
+    const notes = `Priorität: ${form.prio || "B"}\\nStatus: ${form.status || "offen"}${manualStatusLine}\\nKategorie: ${form.category || "–"}\\nDeadline: ${form.deadline ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}\\n\\n${cleanDesc}`;
     // Build .ics content – opens in Outlook on PC, default calendar on iPhone
     const ics = [
       "BEGIN:VCALENDAR",
@@ -178,6 +179,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
       "---",
       `Priorität: ${form.prio || "–"}`,
       `Status: ${form.status || "–"}`,
+      ...(form.manualStatus ? [`Eigener Status: ${form.manualStatus}`] : []),
       `Kategorie: ${form.category || "–"}`,
       `Deadline: ${deadlineDate ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}`,
       `Wiedervorlage: ${wiedervorlageDate ? format(wiedervorlageDate, "dd.MM.yyyy HH:mm") : "–"}`,
@@ -237,6 +239,17 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
                   {s}
                 </button>
               ))}
+            </div>
+            {/* Eigener / individueller Status — freier Text, optional */}
+            <div className="relative mt-2">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-violet-500" />
+              <input
+                value={form.manualStatus || ""}
+                onChange={(e) => set("manualStatus", e.target.value)}
+                placeholder="Eigener Status … (optional)"
+                maxLength={80}
+                className="w-full pl-7 pr-3 py-2 rounded-xl bg-violet-50/70 border border-violet-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
+              />
             </div>
           </div>
 

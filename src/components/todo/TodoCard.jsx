@@ -61,6 +61,12 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
               <p className={`text-sm font-semibold text-slate-800 leading-snug line-clamp-2 ${todo.status === "erledigt" ? "line-through opacity-50" : ""}`}>
                 {todo.title}
               </p>
+              {todo.manualStatus && (
+                <span className="inline-flex items-center gap-1 max-w-full mt-1 px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />
+                  <span className="truncate">{todo.manualStatus}</span>
+                </span>
+              )}
               {todo.description && (
                 <p className="text-xs text-slate-400 mt-1 line-clamp-2">{todo.description.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim()}</p>
               )}
