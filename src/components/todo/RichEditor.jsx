@@ -129,6 +129,51 @@ const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder
     if (url) exec("createLink", url);
   };
 
+  const escapeHtml = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Zwischenablage als reinen Text einfügen (Formatierung wird entfernt)
+  const pastePlain = async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      document.execCommand("insertHTML", false, escapeHtml(text).replace(/\r?\n/g, "<br>"));
+      handleInput();
+    } catch {
+      alert("Kein Zugriff auf die Zwischenablage. Bitte Strg+Umschalt+V verwenden.");
+    }
+  };
+
+  // Zwischenablage mit bestehender Formatierung einfügen
+  const pasteFormatted = async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    try {
+      if (navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          if (item.types.includes("text/html")) {
+            const html = await (await item.getType("text/html")).text();
+            document.execCommand("insertHTML", false, html);
+            handleInput();
+            return;
+          }
+        }
+      }
+      // Fallback: nur Text verfügbar
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      document.execCommand("insertHTML", false, escapeHtml(text).replace(/\r?\n/g, "<br>"));
+      handleInput();
+    } catch {
+      alert("Kein Zugriff auf die Zwischenablage. Bitte Strg+V verwenden.");
+    }
+  };
+
   return (
     <div className="glass-input rounded-2xl overflow-hidden">
       {/* Toolbar */}
@@ -143,6 +188,27 @@ const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder
             <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.5L23 10"/>
           </svg>
         </ToolBtn>
+        <Sep />
+        {/* Einfügen: ohne / mit Formatierung */}
+        <button onMouseDown={(e) => { e.preventDefault(); pastePlain(); }}
+          title="Kopierten Text einfügen — Formatierung wird entfernt"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[10px] font-semibold text-slate-600 bg-white/70 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all h-6">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1"/>
+          </svg>
+          Text
+        </button>
+        <button onMouseDown={(e) => { e.preventDefault(); pasteFormatted(); }}
+          title="Kopierten Text mit bestehender Formatierung einfügen"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[10px] font-semibold text-slate-600 bg-white/70 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all h-6">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1"/>
+            <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+          </svg>
+          <b>Format</b>
+        </button>
         <Sep />
         <ToolBtn onClick={() => exec("bold")} title="Fett"><b>B</b></ToolBtn>
         <ToolBtn onClick={() => exec("italic")} title="Kursiv"><i>I</i></ToolBtn>
