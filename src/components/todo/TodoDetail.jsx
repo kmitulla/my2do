@@ -10,15 +10,15 @@ const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
 const PRIO_STYLES = { A: "bg-red-500", B: "bg-orange-400", C: "bg-emerald-500" };
 const PRIO_BTN = {
-  A: { active: "bg-red-500 text-white shadow-md", base: "bg-slate-100 text-slate-500" },
-  B: { active: "bg-orange-400 text-white shadow-md", base: "bg-slate-100 text-slate-500" },
-  C: { active: "bg-emerald-500 text-white shadow-md", base: "bg-slate-100 text-slate-500" },
+  A: { active: "bg-red-500 text-white shadow-md", base: "glass-chip text-slate-500" },
+  B: { active: "bg-orange-400 text-white shadow-md", base: "glass-chip text-slate-500" },
+  C: { active: "bg-emerald-500 text-white shadow-md", base: "glass-chip text-slate-500" },
 };
 const STATUS_BTN = {
-  "offen": { active: "bg-slate-600 text-white", base: "bg-slate-100 text-slate-500" },
-  "in Arbeit": { active: "bg-blue-500 text-white", base: "bg-slate-100 text-slate-500" },
-  "wartend": { active: "bg-amber-400 text-white", base: "bg-slate-100 text-slate-500" },
-  "erledigt": { active: "bg-emerald-500 text-white", base: "bg-slate-100 text-slate-500" },
+  "offen": { active: "bg-slate-600 text-white", base: "glass-chip text-slate-500" },
+  "in Arbeit": { active: "bg-blue-500 text-white", base: "glass-chip text-slate-500" },
+  "wartend": { active: "bg-amber-400 text-white", base: "glass-chip text-slate-500" },
+  "erledigt": { active: "bg-emerald-500 text-white", base: "glass-chip text-slate-500" },
 };
 
 function toInputDate(ts) {
@@ -452,7 +452,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
             )}
           </button>
           <button onClick={save} disabled={saving || savingStay}
-            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold shadow-lg disabled:opacity-60">
+            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-60">
             {saving ? "..." : "Speichern"}
           </button>
         </div>

@@ -60,7 +60,7 @@ export default function InboxPanel() {
               {loading[item.id] === "dismissing" ? "..." : "Ablehnen"}
             </button>
             <button onClick={() => handleAccept(item)} disabled={!!loading[item.id]}
-              className="flex-1 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all disabled:opacity-50">
+              className="flex-1 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-xs font-semibold btn-liquid disabled:opacity-50">
               {loading[item.id] === "accepting" ? "..." : "Übernehmen"}
             </button>
           </div>

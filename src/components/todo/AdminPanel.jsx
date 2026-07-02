@@ -76,7 +76,7 @@ export default function AdminPanel() {
           {error && <p className="text-red-500 text-xs">{error}</p>}
           {success && <p className="text-emerald-600 text-xs">{success}</p>}
           <button type="submit" disabled={creating}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold disabled:opacity-60">
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-60">
             {creating ? "Erstelle..." : "User erstellen"}
           </button>
         </form>

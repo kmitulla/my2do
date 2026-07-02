@@ -16,9 +16,9 @@ const SORT_OPTIONS = [
 ];
 
 const PRIO_BTN = {
-  A: { active: "bg-red-500 text-white", base: "bg-slate-100 text-slate-600" },
-  B: { active: "bg-orange-400 text-white", base: "bg-slate-100 text-slate-600" },
-  C: { active: "bg-emerald-500 text-white", base: "bg-slate-100 text-slate-600" },
+  A: { active: "bg-red-500 text-white", base: "glass-chip text-slate-600" },
+  B: { active: "bg-orange-400 text-white", base: "glass-chip text-slate-600" },
+  C: { active: "bg-emerald-500 text-white", base: "glass-chip text-slate-600" },
 };
 
 export default function FilterBar({ filters, onFiltersChange, categories, sortBy, onSortChange }) {
@@ -160,7 +160,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
                 const active = filters.statuses?.includes(s);
                 return (
                   <button key={s} onClick={() => toggleMulti("statuses", s)}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${active ? "bg-blue-500 text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}>
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${active ? "bg-blue-500 text-white shadow-sm" : "glass-chip text-slate-600"}`}>
                     {s}
                   </button>
                 );
@@ -196,14 +196,14 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
               <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tags <span className="text-slate-300 font-normal normal-case">(Mehrfachauswahl)</span></label>
               <div className="flex flex-wrap gap-1.5">
                 <button onClick={() => toggleMulti("categories", "__no_tag__")}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${filters.categories?.includes("__no_tag__") ? "bg-slate-600 text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}>
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${filters.categories?.includes("__no_tag__") ? "bg-slate-600 text-white shadow-sm" : "glass-chip text-slate-600"}`}>
                   Ohne Tag
                 </button>
                 {categories.map((c) => {
                   const active = filters.categories?.includes(c.name);
                   return (
                     <button key={c.id} onClick={() => toggleMulti("categories", c.name)}
-                      className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${active ? "bg-blue-500 text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}>
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-medium ${active ? "bg-blue-500 text-white shadow-sm" : "glass-chip text-slate-600"}`}>
                       {c.name}
                     </button>
                   );
@@ -226,7 +226,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
                 { key: "only_past", label: "Nur vergangene" },
               ].map((o) => (
                 <button key={o.key} onClick={() => updateFilter("wiedervorlageFilter", o.key)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${(filters.wiedervorlageFilter || "") === o.key ? "bg-purple-500 text-white" : "bg-slate-100 text-slate-600"}`}>
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${(filters.wiedervorlageFilter || "") === o.key ? "bg-purple-500 text-white" : "glass-chip text-slate-600"}`}>
                   {o.label}
                 </button>
               ))}

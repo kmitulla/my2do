@@ -122,9 +122,13 @@ export default function Dashboard() {
       });
       result = applyWiedervorlageFilter(result, filters.wiedervorlageFilter);
     }
-    if (search.trim()) result = result.filter((t) =>
-      t.title?.toLowerCase().includes(search.toLowerCase()) ||
-      (t.description || "").replace(/<[^>]+>/g,"").toLowerCase().includes(search.toLowerCase()));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((t) =>
+        t.title?.toLowerCase().includes(q) ||
+        (t.manualStatus || "").toLowerCase().includes(q) ||
+        (t.description || "").replace(/<[^>]+>/g, "").toLowerCase().includes(q));
+    }
     return sortTodos(result, sortBy);
   }, [todos, filters, sortBy, search, searchAll]);
 
@@ -254,7 +258,7 @@ export default function Dashboard() {
           {tabs.map((tab, i) => (
             <button key={tab.label} onClick={() => setActiveTab(i)}
               className={`flex-shrink-0 flex-1 py-2 px-1 rounded-2xl text-xs font-semibold transition-all relative min-w-[52px] ${
-                activeTab === i ? "bg-white/90 shadow-md shadow-indigo-500/10 text-blue-600" : "text-slate-500 hover:text-slate-700"
+                activeTab === i ? "tab-pill-active text-blue-600" : "text-slate-500 hover:text-slate-700"
               }`}>
               <span className="hidden sm:inline">{tab.label}</span>
               <span className="sm:hidden flex items-center justify-center">{TAB_ICONS[tab.label]}</span>

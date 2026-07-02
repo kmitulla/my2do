@@ -90,7 +90,7 @@ Kein Markdown, kein erklaerende Text, nur das JSON-Objekt.`;
         <div className="flex gap-2 mt-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-2xl bg-slate-100 text-slate-600 text-sm font-medium">Abbrechen</button>
           <button onClick={handleGenerate} disabled={loading || !input.trim() || !apiKey}
-            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-600 text-white text-sm font-semibold shadow-lg disabled:opacity-40">
+            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-600 text-white text-sm font-semibold btn-liquid disabled:opacity-40">
             {loading ? "Erstelle..." : "✦ KI erstellen"}
           </button>
         </div>

@@ -96,7 +96,7 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold shadow-lg disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-semibold btn-liquid disabled:opacity-50"
           >
             {saving ? "Speichern…" : "Als Notiz speichern"}
           </button>

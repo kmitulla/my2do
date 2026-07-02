@@ -271,7 +271,7 @@ export default function LoginPage() {
               )}
 
               <button type="submit" disabled={loading}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 disabled:opacity-60 text-[16px]">
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold btn-liquid disabled:opacity-60 text-[16px]">
                 {loading ? "Anmelden..." : "Anmelden"}
               </button>
             </form>
