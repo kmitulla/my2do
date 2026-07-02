@@ -62,6 +62,7 @@ export default function Dashboard() {
   // Minimierte Editoren: ungespeicherte Entwürfe [{ todo, draft }]
   const [minimized, setMinimized] = useState([]);
   const [selectedDraft, setSelectedDraft] = useState(null);
+  const [showMinList, setShowMinList] = useState(false);
   const [view, setView] = useState(() => localStorage.getItem(LS_VIEW) || "list");
   const [sortBy, setSortBy] = useState(() => localStorage.getItem(LS_SORT) || "createdAt_desc");
   const [filters, setFilters] = useState(defaultFilters);
@@ -321,8 +322,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Minimierte Todo-Editoren — Tab-Leiste unten */}
-      {minimized.length > 0 && (
+      {/* Minimierte Todo-Editoren — bis 3 als Chips, darüber gebündelt mit aufklappbarer Liste */}
+      {minimized.length > 0 && minimized.length <= 3 && (
         <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex gap-2 max-w-[94vw] overflow-x-auto no-scrollbar px-1 py-1">
           {minimized.map(({ todo, draft }) => (
             <div key={todo.id}
@@ -342,6 +343,40 @@ export default function Dashboard() {
               </button>
             </div>
           ))}
+        </div>
+      )}
+      {minimized.length > 3 && (
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center">
+          {showMinList && (
+            <div className="mb-2 w-80 max-w-[92vw] max-h-72 overflow-y-auto rounded-2xl bg-white/95 backdrop-blur-xl border border-slate-200 shadow-xl p-1.5 space-y-0.5">
+              {minimized.map(({ todo, draft }) => (
+                <div key={todo.id} className="flex items-center gap-2 pl-2.5 pr-1.5 py-2 rounded-xl hover:bg-slate-50">
+                  <button onClick={() => { setShowMinList(false); openTodo(todo); }}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left" title="Wieder öffnen">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      { A: "bg-red-500", B: "bg-orange-400", C: "bg-emerald-500" }[draft.prio] || "bg-orange-400"
+                    }`} />
+                    <span className="text-xs font-medium text-slate-700 truncate">{draft.title || todo.title || "Ohne Titel"}</span>
+                  </button>
+                  <button onClick={() => discardMinimized(todo.id)} title="Verwerfen (Änderungen gehen verloren)"
+                    className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-600 flex-shrink-0">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={() => setShowMinList((v) => !v)}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/90 backdrop-blur-xl border border-slate-200 shadow-lg text-xs font-semibold text-slate-700 active:scale-95 transition-all">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="14" width="18" height="7" rx="2"/><path d="M5 10h14M7 6h10"/>
+            </svg>
+            {minimized.length} minimiert
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`transition-transform ${showMinList ? "rotate-180" : ""}`}>
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+          </button>
         </div>
       )}
 
