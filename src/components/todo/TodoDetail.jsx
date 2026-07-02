@@ -26,10 +26,16 @@ function toInputDate(ts) {
   return format(d, "yyyy-MM-dd'T'HH:mm");
 }
 
-export default function TodoDetail({ todo, categories, onClose, onDelete }) {
+export default function TodoDetail({ todo, categories, onClose, onDelete, onMinimize, initialDraft }) {
   const { user, userProfile } = useFirebaseAuth();
-  const [form, setForm] = useState({ ...todo, tags: todo.tags || (todo.category ? [todo.category] : []) });
+  const [form, setForm] = useState(
+    initialDraft
+      ? { ...initialDraft }
+      : { ...todo, tags: todo.tags || (todo.category ? [todo.category] : []) }
+  );
   const [saving, setSaving] = useState(false);
+  const [savingStay, setSavingStay] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [newCat, setNewCat] = useState("");
@@ -73,8 +79,14 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
   }, []);
 
   useEffect(() => {
-    setForm({ ...todo });
-    isDirtyRef.current = false;
+    if (initialDraft) {
+      setForm({ ...initialDraft });
+      isDirtyRef.current = true;
+    } else {
+      setForm({ ...todo, tags: todo.tags || (todo.category ? [todo.category] : []) });
+      isDirtyRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todo]);
 
   const set = (k, v) => {
@@ -91,11 +103,28 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
     return data;
   };
 
+  // Speichern & schließen (bisheriges Verhalten)
   const save = async () => {
     setSaving(true);
     await updateTodo(user.uid, todo.id, buildSaveData());
     setSaving(false);
     onClose();
+  };
+
+  // Speichern ohne zu schließen
+  const saveOnly = async () => {
+    if (savingStay || saving) return;
+    setSavingStay(true);
+    await updateTodo(user.uid, todo.id, buildSaveData());
+    isDirtyRef.current = false;
+    setSavingStay(false);
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 1400);
+  };
+
+  // Minimieren: ungespeicherte Änderungen als Entwurf an Parent geben
+  const handleMinimize = () => {
+    onMinimize?.({ ...form });
   };
 
   // Auto-save on backdrop click (not X)
@@ -146,7 +175,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
     const pad = (n) => String(n).padStart(2, "0");
     const fmtIcs = (d) => `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
     const cleanDesc = (form.description || "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/\n/g, "\\n");
-    const notes = `Priorität: ${form.prio || "B"}\\nStatus: ${form.status || "offen"}\\nKategorie: ${form.category || "–"}\\nDeadline: ${form.deadline ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}\\n\\n${cleanDesc}`;
+    const manualStatusLine = form.manualStatus ? `\\nEigener Status: ${form.manualStatus}` : "";
+    const notes = `Priorität: ${form.prio || "B"}\\nStatus: ${form.status || "offen"}${manualStatusLine}\\nKategorie: ${form.category || "–"}\\nDeadline: ${form.deadline ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}\\n\\n${cleanDesc}`;
     // Build .ics content – opens in Outlook on PC, default calendar on iPhone
     const ics = [
       "BEGIN:VCALENDAR",
@@ -178,6 +208,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
       "---",
       `Priorität: ${form.prio || "–"}`,
       `Status: ${form.status || "–"}`,
+      ...(form.manualStatus ? [`Eigener Status: ${form.manualStatus}`] : []),
       `Kategorie: ${form.category || "–"}`,
       `Deadline: ${deadlineDate ? format(deadlineDate, "dd.MM.yyyy HH:mm") : "–"}`,
       `Wiedervorlage: ${wiedervorlageDate ? format(wiedervorlageDate, "dd.MM.yyyy HH:mm") : "–"}`,
@@ -219,7 +250,13 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
         <div className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-b border-slate-100 px-5 py-4 flex items-center gap-3 rounded-t-3xl">
           <div className={`w-3 h-3 rounded-full ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
           <h2 className="text-base font-semibold text-slate-800 flex-1 truncate">Notiz bearbeiten</h2>
-          <button onClick={handleXClose} className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
+          {onMinimize && (
+            <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)"
+              className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="19"/></svg>
+            </button>
+          )}
+          <button onClick={handleXClose} title="Schließen ohne zu speichern" className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -237,6 +274,17 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
                   {s}
                 </button>
               ))}
+            </div>
+            {/* Eigener / individueller Status — freier Text, optional */}
+            <div className="relative mt-2">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-violet-500" />
+              <input
+                value={form.manualStatus || ""}
+                onChange={(e) => set("manualStatus", e.target.value)}
+                placeholder="Eigener Status … (optional)"
+                maxLength={80}
+                className="w-full pl-7 pr-3 py-2 rounded-xl bg-violet-50/70 border border-violet-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
+              />
             </div>
           </div>
 
@@ -383,7 +431,23 @@ export default function TodoDetail({ todo, categories, onClose, onDelete }) {
             className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmDelete ? "bg-red-500 text-white" : "bg-red-50 border border-red-200 text-red-600"}`}>
             {confirmDelete ? "Wirklich?" : "Löschen"}
           </button>
-          <button onClick={save} disabled={saving}
+          <button onClick={saveOnly} disabled={saving || savingStay} title="Speichern (offen lassen)"
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-60 ${
+              savedFlash
+                ? "bg-emerald-500 text-white shadow-md"
+                : "bg-blue-50 border border-blue-200 text-blue-500 hover:bg-blue-100"
+            }`}>
+            {savingStay ? (
+              <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+            ) : savedFlash ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+              </svg>
+            )}
+          </button>
+          <button onClick={save} disabled={saving || savingStay}
             className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold shadow-lg disabled:opacity-60">
             {saving ? "..." : "Speichern"}
           </button>

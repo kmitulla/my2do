@@ -367,6 +367,14 @@ export default function SwipeableTodoCard({ todo, onClick }) {
           <p className={`text-sm font-medium truncate ${todo.status === "erledigt" ? "line-through text-slate-400" : "text-slate-800"}`}>
             {todo.title}
           </p>
+          {todo.manualStatus && (
+            <div className="mt-1">
+              <span className="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 border border-violet-200 text-[11px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />
+                <span className="truncate">{todo.manualStatus}</span>
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
                 <span key={tag} className="text-[10px] text-indigo-400">#{tag}</span>
