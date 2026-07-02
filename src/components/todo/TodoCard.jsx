@@ -43,9 +43,9 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
     return (
       <div
         onClick={() => onClick(todo)}
-        className="relative bg-white/65 backdrop-blur-xl rounded-2xl border border-white/70 shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer overflow-hidden group"
+        className="relative glass-card rounded-[20px] hover:scale-[1.01] active:scale-[0.99] cursor-pointer overflow-hidden group"
       >
-        <div className={`absolute top-0 left-0 w-1.5 h-full ${prio.bar} rounded-l-2xl`} />
+        <div className={`absolute top-0 left-0 w-1.5 h-full ${prio.bar} rounded-l-[20px]`} />
         <div className="p-3.5 pl-4">
           <div className="flex items-start gap-2">
             <button onClick={toggleDone} className="mt-0.5 flex-shrink-0">
@@ -93,7 +93,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
   return (
     <div
       onClick={() => onClick(todo)}
-      className="relative bg-white/65 backdrop-blur-xl rounded-2xl border border-white/70 shadow-sm hover:shadow-md hover:scale-[1.002] active:scale-[0.999] transition-all cursor-pointer overflow-hidden group flex items-center gap-3 px-4 py-3"
+      className="relative glass-card rounded-[20px] hover:scale-[1.002] active:scale-[0.999] cursor-pointer overflow-hidden group flex items-center gap-3 px-4 py-3"
     >
       <div className={`absolute top-0 left-0 w-1.5 h-full ${prio.bar}`} />
       <button onClick={toggleDone} className="flex-shrink-0 pl-1">

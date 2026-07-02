@@ -39,7 +39,7 @@ export default function InboxPanel() {
   return (
     <div className="space-y-2">
       {items.map((item) => (
-        <div key={item.id} className="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+        <div key={item.id} className="glass rounded-[24px] p-4">
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-slate-800 truncate">{item.todoTitle}</p>

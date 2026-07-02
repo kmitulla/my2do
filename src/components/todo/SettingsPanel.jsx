@@ -5,11 +5,15 @@ import { updatePassword } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import ExportPanel from "./ExportPanel";
+import useConfirmReset from "@/hooks/useConfirmReset";
 
 export default function SettingsPanel({ categories, todos, onCategoryDeleted }) {
   const { user, userProfile, logout } = useFirebaseAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmCatDelete, setConfirmCatDelete] = useState(null);
+  // Klick woanders → Bestätigungszustand zurücksetzen
+  const logoutBtnRef = useConfirmReset(confirmLogout, () => setConfirmLogout(false));
+  const catBtnRef = useConfirmReset(confirmCatDelete !== null, () => setConfirmCatDelete(null));
   const [newPw, setNewPw] = useState("");
   const [pwMsg, setPwMsg] = useState("");
   const [openaiKey, setOpenaiKey] = useState(userProfile?.openaiKey || "");
@@ -43,7 +47,7 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
   return (
     <div className="space-y-4">
       {/* Profile */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+      <div className="glass rounded-[24px] p-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xl font-bold">
             {(userProfile?.displayName || user?.email || "?")[0].toUpperCase()}
@@ -59,7 +63,7 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
       </div>
 
       {/* KI Feature */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4 space-y-3">
+      <div className="glass rounded-[24px] p-4 space-y-3">
         <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
           <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs">✦</span>
           KI-Notiz Erstellung
@@ -86,7 +90,7 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
       </div>
 
       {/* Password */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+      <div className="glass rounded-[24px] p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-2">Passwort ändern</h3>
         <form onSubmit={handleChangePw} className="flex gap-2">
           <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)}
@@ -98,7 +102,7 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
       </div>
 
       {/* Categories */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+      <div className="glass rounded-[24px] p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-2">Tags verwalten</h3>
         {categories.length === 0 ? (
           <p className="text-xs text-slate-400">Keine Tags vorhanden.</p>
@@ -107,7 +111,7 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
             {categories.map((c) => (
               <div key={c.id} className="flex items-center justify-between py-1">
                 <span className="text-sm text-slate-700">{c.name}</span>
-                <button onClick={() => handleDeleteCat(c)}
+                <button ref={confirmCatDelete === c.id ? catBtnRef : null} onClick={() => handleDeleteCat(c)}
                   className={`text-xs px-2.5 py-1 rounded-lg transition-all ${confirmCatDelete === c.id ? "bg-red-500 text-white" : "bg-red-50 text-red-500 hover:bg-red-100"}`}>
                   {confirmCatDelete === c.id ? "Sicher?" : "Löschen"}
                 </button>
@@ -118,14 +122,14 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
       </div>
 
       {/* Export & Backup */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+      <div className="glass rounded-[24px] p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Export & Backup</h3>
         <ExportPanel todos={todos} categories={categories} />
       </div>
 
       {/* Logout */}
-      <button onClick={() => { if (!confirmLogout) { setConfirmLogout(true); return; } logout(); }}
-        className={`w-full py-3 rounded-2xl text-sm font-semibold transition-all ${confirmLogout ? "bg-red-500 text-white" : "bg-red-50 border border-red-200 text-red-600 hover:bg-red-100"}`}>
+      <button ref={logoutBtnRef} onClick={() => { if (!confirmLogout) { setConfirmLogout(true); return; } logout(); }}
+        className={`w-full py-3 rounded-[22px] text-sm font-semibold transition-all ${confirmLogout ? "bg-red-500 text-white shadow-lg shadow-red-500/30" : "bg-red-50/70 border border-red-200 text-red-600 hover:bg-red-100"}`}>
         {confirmLogout ? "Wirklich abmelden?" : "Abmelden"}
       </button>
     </div>

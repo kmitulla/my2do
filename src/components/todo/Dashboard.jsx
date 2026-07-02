@@ -188,11 +188,18 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100" style={{ overflowY: "auto" }}>
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-white/60 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md flex-shrink-0">
+    <div className="min-h-screen relative" style={{ overflowY: "auto" }}>
+      {/* Ambienter Liquid-Glass-Hintergrund */}
+      <div className="liquid-bg">
+        <div className="liquid-blob liquid-blob-1" />
+        <div className="liquid-blob liquid-blob-2" />
+        <div className="liquid-blob liquid-blob-3" />
+      </div>
+
+      {/* Header — schwebende Glasleiste */}
+      <header className="sticky top-0 z-40 px-3 pt-3">
+        <div className="max-w-5xl mx-auto glass-strong rounded-[24px] px-4 py-2.5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30 flex-shrink-0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
           <h1 className="text-lg font-bold text-slate-800 tracking-tight flex-1">2Do</h1>
@@ -201,7 +208,7 @@ export default function Dashboard() {
             <button
               onClick={() => document.execCommand?.("undo")}
               title="Rückgängig"
-              className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-700 active:scale-90 transition-all"
+              className="w-9 h-9 rounded-xl glass-chip flex items-center justify-center text-slate-500 hover:text-slate-700 active:scale-90 transition-all"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
@@ -210,7 +217,7 @@ export default function Dashboard() {
             <button
               onClick={() => document.execCommand?.("redo")}
               title="Wiederholen"
-              className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 hover:text-slate-700 active:scale-90 transition-all"
+              className="w-9 h-9 rounded-xl glass-chip flex items-center justify-center text-slate-500 hover:text-slate-700 active:scale-90 transition-all"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.5L23 10"/>
@@ -227,7 +234,7 @@ export default function Dashboard() {
               </button>
             )}
             <button onClick={() => handleViewChange(view === "list" ? "grid" : "list")}
-              className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-all active:scale-90">
+              className="w-10 h-10 rounded-xl glass-chip flex items-center justify-center text-slate-600 transition-all active:scale-90">
               {view === "list" ? (
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
               ) : (
@@ -241,13 +248,13 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 pb-28">
-        {/* Tab Nav */}
-        <div className="flex gap-1 mt-4 bg-white/50 backdrop-blur-xl rounded-2xl p-1 border border-white/60 overflow-x-auto no-scrollbar">
+      <div className="max-w-5xl mx-auto px-4 pb-28 relative z-10">
+        {/* Tab Nav — Glas-Dock */}
+        <div className="flex gap-1 mt-4 glass rounded-[22px] p-1.5 overflow-x-auto no-scrollbar">
           {tabs.map((tab, i) => (
             <button key={tab.label} onClick={() => setActiveTab(i)}
-              className={`flex-shrink-0 flex-1 py-2 px-1 rounded-xl text-xs font-semibold transition-all relative min-w-[52px] ${
-                activeTab === i ? "bg-white shadow-md text-blue-600" : "text-slate-500 hover:text-slate-700"
+              className={`flex-shrink-0 flex-1 py-2 px-1 rounded-2xl text-xs font-semibold transition-all relative min-w-[52px] ${
+                activeTab === i ? "bg-white/90 shadow-md shadow-indigo-500/10 text-blue-600" : "text-slate-500 hover:text-slate-700"
               }`}>
               <span className="hidden sm:inline">{tab.label}</span>
               <span className="sm:hidden flex items-center justify-center">{TAB_ICONS[tab.label]}</span>
@@ -264,7 +271,7 @@ export default function Dashboard() {
         <div className="mt-4 space-y-4">
           {activeTab === 0 && (
             <>
-              <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-3 shadow-sm">
+              <div className="glass rounded-[24px] p-3">
                 <QuickAdd categories={categories} onCreated={handleQuickCreated} aiEnabled={aiEnabled} />
               </div>
               <div className="space-y-1.5">
@@ -274,7 +281,7 @@ export default function Dashboard() {
                   </svg>
                   <input value={search} onChange={(e) => { setSearch(e.target.value); if (!e.target.value) setSearchAll(false); }}
                     placeholder="Suchen..."
-                    className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-white/70 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[16px]" />
+                    className="w-full pl-10 pr-10 py-2.5 rounded-[20px] glass-input text-slate-800 placeholder-slate-400 text-[16px]" />
                   {search && (
                     <button
                       onClick={() => { setSearch(""); setSearchAll(false); }}
@@ -327,7 +334,7 @@ export default function Dashboard() {
         <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex gap-2 max-w-[94vw] overflow-x-auto no-scrollbar px-1 py-1">
           {minimized.map(({ todo, draft }) => (
             <div key={todo.id}
-              className="flex-shrink-0 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-white/90 backdrop-blur-xl border border-slate-200 shadow-lg">
+              className="flex-shrink-0 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full glass-strong">
               <button onClick={() => openTodo(todo)} className="flex items-center gap-2 max-w-[160px]" title="Wieder öffnen">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                   { A: "bg-red-500", B: "bg-orange-400", C: "bg-emerald-500" }[draft.prio] || "bg-orange-400"
@@ -348,7 +355,7 @@ export default function Dashboard() {
       {minimized.length > 3 && (
         <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center">
           {showMinList && (
-            <div className="mb-2 w-80 max-w-[92vw] max-h-72 overflow-y-auto rounded-2xl bg-white/95 backdrop-blur-xl border border-slate-200 shadow-xl p-1.5 space-y-0.5">
+            <div className="mb-2 w-80 max-w-[92vw] max-h-72 overflow-y-auto rounded-[22px] glass-strong p-1.5 space-y-0.5">
               {minimized.map(({ todo, draft }) => (
                 <div key={todo.id} className="flex items-center gap-2 pl-2.5 pr-1.5 py-2 rounded-xl hover:bg-slate-50">
                   <button onClick={() => { setShowMinList(false); openTodo(todo); }}
@@ -367,7 +374,7 @@ export default function Dashboard() {
             </div>
           )}
           <button onClick={() => setShowMinList((v) => !v)}
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/90 backdrop-blur-xl border border-slate-200 shadow-lg text-xs font-semibold text-slate-700 active:scale-95 transition-all">
+            className="flex items-center gap-2 px-4 py-2 rounded-full glass-strong text-xs font-semibold text-slate-700 active:scale-95 transition-all">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="14" width="18" height="7" rx="2"/><path d="M5 10h14M7 6h10"/>
             </svg>

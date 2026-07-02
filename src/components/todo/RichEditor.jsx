@@ -130,7 +130,7 @@ const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder
   };
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white/80">
+    <div className="glass-input rounded-2xl overflow-hidden">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 bg-slate-50/80">
         <ToolBtn onClick={() => exec("undo")} title="Rückgängig">
