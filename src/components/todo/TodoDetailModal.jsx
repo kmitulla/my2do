@@ -7,7 +7,7 @@ import TodoDetail from "./TodoDetail";
  * - Close: slides down with spring
  * - Backdrop: blurred frosted glass
  */
-export default function TodoDetailModal({ todo, categories, onClose, onDelete }) {
+export default function TodoDetailModal({ todo, categories, onClose, onDelete, onMinimize, initialDraft }) {
   const [phase, setPhase] = useState("entering"); // entering | open | closing
   const closeRef = useRef(false);
 
@@ -24,6 +24,16 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
     setTimeout(() => {
       closeRef.current = false;
       onClose();
+    }, 380);
+  };
+
+  const handleMinimize = (draft) => {
+    if (closeRef.current) return;
+    closeRef.current = true;
+    setPhase("closing");
+    setTimeout(() => {
+      closeRef.current = false;
+      onMinimize?.(draft);
     }, 380);
   };
 
@@ -101,6 +111,8 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete })
           categories={categories}
           onClose={handleClose}
           onDelete={handleDelete}
+          onMinimize={onMinimize ? handleMinimize : undefined}
+          initialDraft={initialDraft}
         />
       </div>
     </div>

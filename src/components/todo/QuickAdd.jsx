@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { addTodo } from "@/lib/todoService";
 import EmailDropModal from "./EmailDropModal";
@@ -6,55 +6,12 @@ import { parseMsgFile } from "@/lib/msgParser";
 
 
 const PRIOS = ["A", "B", "C"];
+// Runde Prio-Buttons — bewusst anders geformt als die eckigen Tag-Buttons
 const PRIO_BASE = {
-  A: { bg: "bg-red-100", text: "text-red-600", ring: "ring-red-400", glow: "rgba(239,68,68,0.5)" },
-  B: { bg: "bg-amber-100", text: "text-amber-600", ring: "ring-amber-400", glow: "rgba(245,158,11,0.5)" },
-  C: { bg: "bg-green-100", text: "text-green-600", ring: "ring-green-400", glow: "rgba(34,197,94,0.5)" },
+  A: { active: "bg-red-500 border-red-500 text-white shadow-md", base: "bg-white text-red-500 border-red-300" },
+  B: { active: "bg-amber-500 border-amber-500 text-white shadow-md", base: "bg-white text-amber-500 border-amber-300" },
+  C: { active: "bg-emerald-500 border-emerald-500 text-white shadow-md", base: "bg-white text-emerald-500 border-emerald-300" },
 };
-
-// Sequential pulsing: each button pulses 0.9s after the previous
-const PULSE_DELAYS = { A: 0, B: 0.9, C: 1.8 };
-const PULSE_CYCLE = 3.6; // seconds for one full cycle
-
-function PulseButton({ label, active, color, onClick, pulseDelay }) {
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    // Start with offset so pulses are sequential
-    const initial = setTimeout(() => {
-      setTick((t) => t + 1);
-      const interval = setInterval(() => setTick((t) => t + 1), PULSE_CYCLE * 1000);
-      return () => clearInterval(interval);
-    }, pulseDelay * 1000);
-    return () => clearTimeout(initial);
-  }, [pulseDelay]);
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative px-3 py-1.5 rounded-lg text-xs font-bold transition-all border overflow-visible ${
-        active
-          ? `${color.bg} ${color.text} border-transparent ring-2 ring-offset-1 ${color.ring} shadow-sm`
-          : "bg-white/80 text-slate-500 border-slate-200"
-      }`}
-      style={active ? { boxShadow: `0 0 12px ${color.glow}, 0 2px 8px rgba(0,0,0,0.08)` } : {}}
-    >
-      <span key={tick} className="absolute inset-0 rounded-lg pointer-events-none"
-        style={{ border: `1.5px solid ${color.glow}`, animation: "quick-pulse 0.9s ease-out forwards" }} />
-      Prio {label}
-    </button>
-  );
-}
-
-function InputParticle({ x, y, color }) {
-  return (
-    <div className="absolute pointer-events-none" style={{
-      left: x, top: y, width: 4, height: 4, borderRadius: "50%",
-      background: color, animation: "particle-float 0.8s ease-out forwards", zIndex: 10,
-    }} />
-  );
-}
 
 function addDaysFromNow(n) {
   const d = new Date();
@@ -119,13 +76,9 @@ export default function QuickAdd({ categories, onCreated }) {
   const [tags, setTags] = useState([]);
   const [wiedervorlage, setWiedervorlage] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [typing, setTyping] = useState(false);
-  const [particles, setParticles] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const [emailParsed, setEmailParsed] = useState(null);
   const inputRef = useRef(null);
-  const typingTimer = useRef(null);
-  const particleId = useRef(0);
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -194,21 +147,6 @@ export default function QuickAdd({ categories, onCreated }) {
 
   const handleChange = (e) => {
     setTitle(e.target.value);
-    setTyping(true);
-    clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(() => setTyping(false), 1000);
-
-    if (inputRef.current && e.target.value.length % 2 === 0) {
-      const rect = inputRef.current.getBoundingClientRect();
-      const containerRect = inputRef.current.parentElement.getBoundingClientRect();
-      const colors = ["#818cf8", "#a78bfa", "#38bdf8", "#34d399", "#fb923c"];
-      const id = particleId.current++;
-      const px = rect.left - containerRect.left + Math.random() * rect.width;
-      const py = rect.top - containerRect.top + Math.random() * rect.height;
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      setParticles((prev) => [...prev.slice(-8), { id, x: px, y: py, color }]);
-      setTimeout(() => setParticles((prev) => prev.filter((p) => p.id !== id)), 900);
-    }
   };
 
   // Quick save: just save, no popup
@@ -227,7 +165,6 @@ export default function QuickAdd({ categories, onCreated }) {
     setTags([]);
     setWiedervorlage(null);
     setLoading(false);
-    setTyping(false);
     inputRef.current?.focus();
   };
 
@@ -248,7 +185,6 @@ export default function QuickAdd({ categories, onCreated }) {
     setTags([]);
     setWiedervorlage(null);
     setLoading(false);
-    setTyping(false);
     inputRef.current?.focus();
     if (onCreated) onCreated({ id: ref.id, ...newTodo });
   };
@@ -286,10 +222,6 @@ export default function QuickAdd({ categories, onCreated }) {
             <span className="text-indigo-500 text-xs font-semibold">📧 E-Mail als Notiz ablegen</span>
           </div>
         )}
-        <div className="absolute inset-0 pointer-events-none overflow-visible z-10">
-          {particles.map((p) => <InputParticle key={p.id} x={p.x} y={p.y} color={p.color} />)}
-        </div>
-
         <div className="relative flex-1">
           <input
             ref={inputRef}
@@ -297,21 +229,8 @@ export default function QuickAdd({ categories, onCreated }) {
             onChange={handleChange}
             onKeyDown={(e) => e.key === "Enter" && handleQuickSave()}
             placeholder="Neue Aufgabe hinzufügen…"
-            className="w-full px-3 py-2.5 rounded-xl bg-white/80 border text-slate-800 placeholder-slate-400 focus:outline-none text-[16px] transition-all duration-300"
-            style={{
-              borderColor: typing ? "rgba(99,102,241,0.6)" : "rgba(203,213,225,1)",
-              boxShadow: typing ? "0 0 0 3px rgba(99,102,241,0.15), 0 0 20px rgba(99,102,241,0.1)" : "none",
-            }}
+            className="w-full px-3 py-2.5 rounded-xl bg-white/80 border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[16px]"
           />
-          {typing && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-xl overflow-hidden">
-              <div style={{
-                height: "100%",
-                background: "linear-gradient(90deg, transparent, #818cf8, #a78bfa, #38bdf8, transparent)",
-                animation: "scan-input 1.2s linear infinite",
-              }} />
-            </div>
-          )}
         </div>
 
         {/* Quick save (no popup) */}
@@ -346,15 +265,7 @@ export default function QuickAdd({ categories, onCreated }) {
           {loading ? (
             <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
           ) : (
-            <>
-              <IconPlus />
-              {hasText && (
-                <span className="absolute inset-0 rounded-xl" style={{
-                  animation: "btn-pulse 1.5s ease-in-out infinite",
-                  border: "2px solid rgba(99,102,241,0.5)",
-                }} />
-              )}
-            </>
+            <IconPlus />
           )}
         </button>
       </div>
@@ -362,15 +273,21 @@ export default function QuickAdd({ categories, onCreated }) {
       {/* Prio + category */}
       <div className="flex gap-2 flex-wrap items-center">
         {PRIOS.map((p) => (
-          <PulseButton
+          <button
             key={p}
-            label={p}
-            active={prio === p}
-            color={PRIO_BASE[p]}
+            type="button"
             onClick={() => setPrio(p)}
-            pulseDelay={PULSE_DELAYS[p]}
-          />
+            title={`Priorität ${p}`}
+            className={`w-9 h-9 rounded-full text-sm font-bold border-2 flex items-center justify-center transition-all active:scale-90 ${
+              prio === p ? `${PRIO_BASE[p].active} scale-110` : PRIO_BASE[p].base
+            }`}
+          >
+            {p}
+          </button>
         ))}
+
+        {/* Trenner: Prio (rund) vs. Tags (eckig) */}
+        {categories.length > 0 && <div className="w-px h-6 bg-slate-300 mx-1" />}
 
         {categories.length > 0 && categories.map((c) => {
           const active = tags.includes(c.name);
@@ -430,24 +347,6 @@ export default function QuickAdd({ categories, onCreated }) {
         </div>
       </div>
 
-      <style>{`
-        @keyframes quick-pulse {
-          0% { transform: scale(1); opacity: 0.8; }
-          100% { transform: scale(1.6); opacity: 0; }
-        }
-        @keyframes btn-pulse {
-          0%, 100% { transform: scale(1); opacity: 0.5; }
-          50% { transform: scale(1.18); opacity: 0.15; }
-        }
-        @keyframes particle-float {
-          0% { transform: translate(0, 0) scale(1); opacity: 0.9; }
-          100% { transform: translate(0px, -30px) scale(0); opacity: 0; }
-        }
-        @keyframes scan-input {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
     </div>
   );
 }
