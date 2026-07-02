@@ -52,12 +52,12 @@ export default function OverviewPanel({ todos }) {
   });
 
   const stats = [
-    { label: "Gesamt", value: total, color: "bg-blue-50 text-blue-600" },
-    { label: "Offen", value: byStatus.offen, color: "bg-slate-100 text-slate-600" },
-    { label: "In Arbeit", value: byStatus["in Arbeit"], color: "bg-blue-100 text-blue-600" },
-    { label: "Erledigt", value: byStatus.erledigt, color: "bg-emerald-100 text-emerald-600" },
-    { label: "Überfällig", value: overdue.length, color: overdue.length > 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-400" },
-    { label: "Heute fällig", value: todayItems.length, color: todayItems.length > 0 ? "bg-amber-100 text-amber-600" : "bg-slate-100 text-slate-400" },
+    { label: "Gesamt", value: total, color: "bg-blue-100/60 text-blue-600" },
+    { label: "Offen", value: byStatus.offen, color: "bg-white/50 text-slate-600" },
+    { label: "In Arbeit", value: byStatus["in Arbeit"], color: "bg-blue-100/60 text-blue-600" },
+    { label: "Erledigt", value: byStatus.erledigt, color: "bg-emerald-100/60 text-emerald-600" },
+    { label: "Überfällig", value: overdue.length, color: overdue.length > 0 ? "bg-red-100/60 text-red-600" : "bg-white/40 text-slate-400" },
+    { label: "Heute fällig", value: todayItems.length, color: todayItems.length > 0 ? "bg-amber-100/60 text-amber-600" : "bg-white/40 text-slate-400" },
   ];
 
   return (
@@ -65,7 +65,7 @@ export default function OverviewPanel({ todos }) {
       {/* Stats Grid */}
       <div className="grid grid-cols-3 gap-2">
         {stats.map((s) => (
-          <div key={s.label} className={`rounded-2xl p-3 text-center ${s.color}`}>
+          <div key={s.label} className={`rounded-[20px] p-3 text-center backdrop-blur-xl border border-white/60 shadow-sm ${s.color}`}>
             <div className="text-2xl font-bold">{s.value}</div>
             <div className="text-[10px] font-medium mt-0.5">{s.label}</div>
           </div>
@@ -73,7 +73,7 @@ export default function OverviewPanel({ todos }) {
       </div>
 
       {/* Prio */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-3">
+      <div className="glass rounded-[24px] p-3">
         <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Nach Priorität</h4>
         <div className="flex gap-2">
           {["A", "B", "C"].map((p) => (
@@ -87,7 +87,7 @@ export default function OverviewPanel({ todos }) {
 
       {/* Overdue */}
       {overdue.length > 0 && (
-        <div className="bg-red-50/80 backdrop-blur-xl rounded-2xl border border-red-200 p-3">
+        <div className="bg-red-50/60 backdrop-blur-xl rounded-[24px] border border-red-200/70 shadow-sm p-3">
           <h4 className="text-xs font-semibold text-red-500 uppercase tracking-wide mb-2">⚠️ Überfällig ({overdue.length})</h4>
           <div className="space-y-1.5">
             {overdue.slice(0, 5).map((t) => (
@@ -103,7 +103,7 @@ export default function OverviewPanel({ todos }) {
 
       {/* Wiedervorlage Heute */}
       {wiedervorlageToday.length > 0 && (
-        <div className="bg-purple-50/80 backdrop-blur-xl rounded-2xl border border-purple-200 p-3">
+        <div className="bg-purple-50/60 backdrop-blur-xl rounded-[24px] border border-purple-200/70 shadow-sm p-3">
           <h4 className="text-xs font-semibold text-purple-500 uppercase tracking-wide mb-2">🔄 Wiedervorlage Heute ({wiedervorlageToday.length})</h4>
           <div className="space-y-1.5">
             {wiedervorlageToday.map((t) => (
@@ -115,7 +115,7 @@ export default function OverviewPanel({ todos }) {
 
       {/* Today */}
       {todayItems.length > 0 && (
-        <div className="bg-amber-50/80 backdrop-blur-xl rounded-2xl border border-amber-200 p-3">
+        <div className="bg-amber-50/60 backdrop-blur-xl rounded-[24px] border border-amber-200/70 shadow-sm p-3">
           <h4 className="text-xs font-semibold text-amber-500 uppercase tracking-wide mb-2">📅 Heute fällig ({todayItems.length})</h4>
           <div className="space-y-1.5">
             {todayItems.map((t) => (

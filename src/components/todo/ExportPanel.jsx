@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
-import { subscribeCategories, addTodo, addCategory, getAllNotebookData, addNotebook, addSection, addPage } from "@/lib/todoService";
+import { addTodo, addCategory, getAllNotebookData, addNotebook, addSection, addPage } from "@/lib/todoService";
 
 function toDate(ts) {
   if (!ts) return null;
@@ -248,7 +248,7 @@ export default function ExportPanel({ todos, categories }) {
       </div>
 
       {/* ── Export-Filter ── */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4 space-y-3">
+      <div className="glass rounded-[24px] p-4 space-y-3">
         <h3 className="text-sm font-semibold text-slate-700">CSV / PDF Export-Filter</h3>
 
         <div className="grid grid-cols-2 gap-2">

@@ -79,14 +79,14 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
     <div className="space-y-2">
       <div className="flex gap-2 items-center">
         <select value={sortBy} onChange={(e) => onSortChange(e.target.value)}
-          className="flex-1 px-3 py-2 rounded-xl bg-white/70 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50">
+          className="flex-1 px-3 py-2 rounded-[18px] glass-input text-slate-700 text-sm">
           {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
         {/* Presets button */}
         <button onClick={() => { setShowPresets(!showPresets); setShowFilters(false); }}
           className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1 ${
-            showPresets ? "bg-violet-500 text-white shadow-md" : "bg-white/70 border border-slate-200 text-slate-600"
+            showPresets ? "bg-violet-500 text-white shadow-md shadow-violet-500/25" : "glass-chip text-slate-600"
           }`} title="Filter-Presets">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
@@ -96,7 +96,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
 
         <button onClick={() => { setShowFilters(!showFilters); setShowPresets(false); }}
           className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
-            showFilters || activeCount > 0 ? "bg-blue-500 text-white shadow-md" : "bg-white/70 border border-slate-200 text-slate-600 hover:bg-white"
+            showFilters || activeCount > 0 ? "bg-blue-500 text-white shadow-md shadow-blue-500/25" : "glass-chip text-slate-600"
           }`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
@@ -107,7 +107,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
 
       {/* Presets panel */}
       {showPresets && (
-        <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-3 shadow-sm">
+        <div className="glass rounded-[24px] p-3 space-y-3 shadow-sm">
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Filter-Presets</p>
 
           {/* Existing presets */}
@@ -150,7 +150,7 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
 
       {/* Filter panel */}
       {showFilters && (
-        <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-white/60 p-3 space-y-3">
+        <div className="glass rounded-[24px] p-3 space-y-3">
 
           {/* Status */}
           <div>

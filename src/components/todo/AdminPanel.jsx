@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, updateDoc, doc, deleteDoc } from "firebase/firestore";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import useConfirmReset from "@/hooks/useConfirmReset";
 
 export default function AdminPanel() {
   const { createUser, isAdmin } = useFirebaseAuth();
@@ -12,6 +13,8 @@ export default function AdminPanel() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // Klick woanders → Bestätigungszustand zurücksetzen
+  const delBtnRef = useConfirmReset(confirmDelete !== null, () => setConfirmDelete(null));
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -61,7 +64,7 @@ export default function AdminPanel() {
   return (
     <div className="space-y-4">
       {/* Create User */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+      <div className="glass rounded-[24px] p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Neuen User anlegen</h3>
         <form onSubmit={handleCreate} className="space-y-2.5">
           <input value={newUser.displayName} onChange={(e) => setNewUser({ ...newUser, displayName: e.target.value })}
@@ -80,7 +83,7 @@ export default function AdminPanel() {
       </div>
 
       {/* User List */}
-      <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 p-4">
+      <div className="glass rounded-[24px] p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Alle Users ({users.length})</h3>
         {loading ? (
           <p className="text-slate-400 text-sm">Laden...</p>
@@ -100,7 +103,7 @@ export default function AdminPanel() {
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
                 </select>
-                <button onClick={() => handleDeleteUser(u.id)}
+                <button ref={confirmDelete === u.id ? delBtnRef : null} onClick={() => handleDeleteUser(u.id)}
                   className={`text-xs px-2 py-1 rounded-lg transition-all ${confirmDelete === u.id ? "bg-red-500 text-white" : "bg-red-50 text-red-500 hover:bg-red-100"}`}>
                   {confirmDelete === u.id ? "Sicher?" : "×"}
                 </button>

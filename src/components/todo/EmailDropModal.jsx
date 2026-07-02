@@ -49,7 +49,7 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose?.()}
     >
-      <div className="w-full sm:max-w-lg bg-white/95 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 p-5 space-y-4">
+      <div className="w-full sm:max-w-lg glass-strong rounded-t-[28px] sm:rounded-[28px] p-5 space-y-4">
         {/* Header */}
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white">
@@ -80,7 +80,7 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
             value={customTitle}
             onChange={(e) => setCustomTitle(e.target.value)}
             placeholder="Titel eingeben…"
-            className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+            className="w-full px-4 py-2.5 rounded-2xl glass-input text-slate-800 text-sm"
             autoFocus
           />
           {!customTitle && (

@@ -4,6 +4,7 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { format } from "date-fns";
 import RichEditor from "./RichEditor";
 import QuickDateButtons from "./QuickDateButtons";
+import useConfirmReset from "@/hooks/useConfirmReset";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
@@ -38,6 +39,9 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   const [savedFlash, setSavedFlash] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  // Klick irgendwo anders → "Wirklich?"-Zustand zurücksetzen
+  const deleteBtnRef = useConfirmReset(confirmDelete, () => setConfirmDelete(false));
+  const archiveBtnRef = useConfirmReset(confirmArchive, () => setConfirmArchive(false));
   const [newCat, setNewCat] = useState("");
   const [showNewCat, setShowNewCat] = useState(false);
 
@@ -86,7 +90,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       setForm({ ...todo, tags: todo.tags || (todo.category ? [todo.category] : []) });
       isDirtyRef.current = false;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [todo]);
 
   const set = (k, v) => {
@@ -243,20 +247,20 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   };
 
   return (
-    <div className="w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl bg-white/85 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 max-h-[95vh] flex flex-col mx-auto"
+    <div className="w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl glass-strong rounded-t-[28px] sm:rounded-[28px] max-h-[95vh] flex flex-col mx-auto"
         style={{ touchAction: "pan-y", overflowX: "hidden", maxWidth: "100vw" }}>
 
         {/* Header */}
-        <div className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-b border-slate-100 px-5 py-4 flex items-center gap-3 rounded-t-3xl">
+        <div className="flex-shrink-0 border-b border-white/50 px-5 py-4 flex items-center gap-3 rounded-t-[28px]">
           <div className={`w-3 h-3 rounded-full ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
           <h2 className="text-base font-semibold text-slate-800 flex-1 truncate">Notiz bearbeiten</h2>
           {onMinimize && (
             <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)"
-              className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
+              className="w-8 h-8 rounded-full glass-chip flex items-center justify-center text-slate-500">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="19"/></svg>
             </button>
           )}
-          <button onClick={handleXClose} title="Schließen ohne zu speichern" className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
+          <button onClick={handleXClose} title="Schließen ohne zu speichern" className="w-8 h-8 rounded-full glass-chip flex items-center justify-center text-slate-500">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -304,7 +308,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
           <div>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Titel *</label>
             <input value={form.title || ""} onChange={(e) => set("title", e.target.value)}
-              className="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-400/50 text-[15px]" />
+              className="w-full px-4 py-2.5 rounded-2xl glass-input text-slate-800 text-[15px]" />
           </div>
 
           {/* Description - rich editor */}
@@ -415,7 +419,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         </div>
 
         {/* Footer */}
-        <div className="flex-shrink-0 bg-white/80 backdrop-blur-xl border-t border-slate-100 p-4 flex gap-2 rounded-b-3xl">
+        <div className="flex-shrink-0 border-t border-white/50 p-4 flex gap-2 rounded-b-[28px]">
           {/* Zeitmarke */}
           <button onClick={insertTimestampInDescription} title="Zeitmarke einfügen"
             className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-500 flex items-center justify-center flex-shrink-0 hover:bg-indigo-100 transition-all">
@@ -423,12 +427,12 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
           </button>
-          <button onClick={handleArchive}
-            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmArchive ? "bg-amber-500 text-white" : "bg-amber-50 border border-amber-200 text-amber-600"}`}>
+          <button ref={archiveBtnRef} onClick={handleArchive}
+            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmArchive ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-amber-50/70 border border-amber-200 text-amber-600"}`}>
             {confirmArchive ? "Wirklich?" : "Archivieren"}
           </button>
-          <button onClick={handleDelete}
-            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmDelete ? "bg-red-500 text-white" : "bg-red-50 border border-red-200 text-red-600"}`}>
+          <button ref={deleteBtnRef} onClick={handleDelete}
+            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmDelete ? "bg-red-500 text-white shadow-lg shadow-red-500/30" : "bg-red-50/70 border border-red-200 text-red-600"}`}>
             {confirmDelete ? "Wirklich?" : "Löschen"}
           </button>
           <button onClick={saveOnly} disabled={saving || savingStay} title="Speichern (offen lassen)"

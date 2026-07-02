@@ -296,7 +296,7 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
             className="w-5 h-5 rounded-md text-slate-400 flex items-center justify-center hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-all">
             <DotsIcon />
           </button>
-          {showMenu && <ContextMenu items={menuItems} onClose={() => setShowMenu(false)} />}
+          {showMenu && <ContextMenu items={menuItems} onClose={() => { setShowMenu(false); setConfirmDel(false); }} />}
         </div>
       </div>
 
@@ -369,7 +369,7 @@ function PageRow({ uid, bookId, sectionId, page, selectedPage, onSelectPage, not
           className="w-5 h-5 rounded flex items-center justify-center text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-all">
           <DotsIcon />
         </button>
-        {showMenu && <ContextMenu items={menuItems} onClose={() => setShowMenu(false)} />}
+        {showMenu && <ContextMenu items={menuItems} onClose={() => { setShowMenu(false); setConfirmDel(false); }} />}
       </div>
     </div>
   );
@@ -426,7 +426,7 @@ function NotebookNode({ uid, notebook, selectedPage, onSelectPage, notebooks, op
             className="w-6 h-6 rounded-lg text-slate-400 flex items-center justify-center hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-all">
             <DotsIcon />
           </button>
-          {showMenu && <ContextMenu items={menuItems} onClose={() => setShowMenu(false)} />}
+          {showMenu && <ContextMenu items={menuItems} onClose={() => { setShowMenu(false); setConfirmDel(false); }} />}
         </div>
       </div>
 
@@ -593,7 +593,7 @@ export default function NotesPanel() {
     <>
       {isMobile ? (
         <>
-          <div className="bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 flex flex-col overflow-hidden" style={{ minHeight: "70vh" }}>
+          <div className="glass rounded-[24px] flex flex-col overflow-hidden" style={{ minHeight: "70vh" }}>
             {sidebarContent}
           </div>
           {selectedPage && (
@@ -602,10 +602,10 @@ export default function NotesPanel() {
         </>
       ) : (
         <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 220px)", maxHeight: "900px" }}>
-          <div className="w-52 xl:w-64 flex-shrink-0 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 flex flex-col overflow-hidden">
+          <div className="w-52 xl:w-64 flex-shrink-0 glass rounded-[24px] flex flex-col overflow-hidden">
             {sidebarContent}
           </div>
-          <div className="flex-1 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/60 overflow-hidden flex flex-col">
+          <div className="flex-1 glass rounded-[24px] overflow-hidden flex flex-col">
             {selectedPage ? (
               <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
                 page={selectedPage.page} fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />

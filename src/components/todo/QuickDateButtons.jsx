@@ -42,7 +42,7 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
             key={n}
             type="button"
             onClick={() => addDays(n)}
-            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 transition-all active:scale-95"
+            className="px-2 py-1 rounded-lg text-[11px] font-semibold glass-chip text-slate-600 hover:text-indigo-600 transition-all active:scale-95"
           >
             {n === 0 ? "+0" : `+${n}`}
           </button>
@@ -55,7 +55,7 @@ export default function QuickDateButtons({ value, onChange, withTime = false }) 
         */}
         <div className="relative">
           <span
-            className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 transition-all cursor-pointer select-none inline-flex items-center"
+            className="px-2 py-1 rounded-lg text-[11px] font-semibold glass-chip text-slate-600 hover:text-indigo-600 transition-all cursor-pointer select-none inline-flex items-center"
             aria-hidden="true"
           >
             📅

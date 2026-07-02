@@ -69,7 +69,7 @@ Kein Markdown, kein erklaerende Text, nur das JSON-Objekt.`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className="w-full sm:max-w-lg bg-white/90 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-white/60 p-5">
+      <div className="w-full sm:max-w-lg glass-strong rounded-t-[28px] sm:rounded-[28px] p-5">
         <div className="flex items-center gap-2 mb-4">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-lg">✦</div>
           <h2 className="text-base font-bold text-slate-800">KI-Notiz erstellen</h2>
@@ -83,7 +83,7 @@ Kein Markdown, kein erklaerende Text, nur das JSON-Objekt.`;
           onChange={(e) => setInput(e.target.value)}
           rows={5}
           placeholder="z.B. 'Morgen Präsentation vorbereiten für das Meeting am Freitag, sehr wichtig, Chef muss das bis Do. haben...'"
-          className="w-full px-4 py-3 rounded-2xl bg-white/80 border border-slate-200 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/50 resize-none"
+          className="w-full px-4 py-3 rounded-2xl glass-input text-slate-800 text-sm resize-none"
         />
         {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
         {!apiKey && <p className="text-xs text-amber-500 mt-2">⚠️ Bitte erst OpenAI API-Key in den Einstellungen hinterlegen.</p>}

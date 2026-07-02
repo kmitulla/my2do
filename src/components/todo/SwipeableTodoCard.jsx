@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { updateTodo, deleteTodo } from "@/lib/todoService";
+import useConfirmReset from "@/hooks/useConfirmReset";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
 
@@ -154,6 +155,13 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     return () => clearTimeout(confirmTimer.current);
   }, [confirmed]);
 
+  // Klick/Tap außerhalb der Karte → Bestätigung sofort zurücksetzen
+  const confirmAreaRef = useConfirmReset(!!confirmed, () => {
+    clearTimeout(confirmTimer.current);
+    setConfirmed(null);
+    setOffsetX(0);
+  }, 0);
+
   const handlePointerStart = useCallback((clientX, clientY) => {
     if (confirmed || showBurst) return;
     startX.current = clientX;
@@ -297,7 +305,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     : <span className="w-2.5 h-2.5 rounded-full border-2 border-slate-300 inline-block" />;
 
   return (
-    <div className="relative overflow-visible rounded-2xl" style={{ minHeight: 56 }}>
+    <div ref={confirmAreaRef} className="relative overflow-visible rounded-[20px]" style={{ minHeight: 56 }}>
       {showBurst && (
         <BurstAnimation
           color={showBurst === "done" ? "#22c55e" : showBurst === "archive" ? "#f59e0b" : "#818cf8"}
@@ -307,7 +315,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
       {/* Left background hint */}
       {offsetX < -20 && leftStage && (
-        <div className="absolute inset-0 flex items-center justify-end px-4 pointer-events-none rounded-2xl"
+        <div className="absolute inset-0 flex items-center justify-end px-4 pointer-events-none rounded-[20px]"
           style={{ background: `linear-gradient(270deg, ${leftStage.bg2}, transparent)`, opacity: 0.15 + Math.min(absLeft / MAX_LEFT, 1) * 0.4 }}>
           <div className="flex flex-col items-end gap-0.5">
             <leftStage.Icon />
@@ -318,7 +326,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
 
       {/* Right background hint (while dragging) */}
       {offsetX > 20 && rightLabel && (
-        <div className="absolute inset-0 flex items-center justify-start px-4 pointer-events-none rounded-2xl"
+        <div className="absolute inset-0 flex items-center justify-start px-4 pointer-events-none rounded-[20px]"
           style={{ background: "rgba(99,102,241,0.08)" }}>
           <div className="flex flex-col items-start gap-0.5">
             <span className="text-xs font-bold text-indigo-500">{rightLabel}</span>
@@ -338,7 +346,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
       {confirmed && (
         <div
           onClick={(e) => { e.stopPropagation(); executeConfirmed(); }}
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl cursor-pointer"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-[20px] cursor-pointer"
           style={{ background: `linear-gradient(135deg, ${confirmed.bg}, ${confirmed.bg2})`, backdropFilter: "blur(4px)" }}>
           <span className="text-white font-bold text-sm">{confirmed.label}?</span>
           <span className="text-white/70 text-[10px] mt-0.5">Tippen zum Bestätigen</span>
@@ -352,7 +360,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
         onTouchEnd={onTouchEnd}
         onMouseDown={onMouseDown}
         onClick={handleCardClick}
-        className={`relative flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white border border-slate-100 shadow-sm cursor-pointer select-none ${todo.status === "erledigt" ? "opacity-55" : ""}`}
+        className={`relative flex items-center gap-3 px-3.5 py-3 rounded-[20px] glass-card cursor-pointer select-none ${todo.status === "erledigt" ? "opacity-55" : ""}`}
         style={{
           transform: `translateX(${offsetX}px)`,
           transition: dragging ? "none" : "transform 0.28s cubic-bezier(.22,.68,0,1.2)",

@@ -52,3 +52,117 @@
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   iOS 26 Liquid Glass Design System
+   ──────────────────────────────────────────────────────────────────────────── */
+@layer components {
+
+  /* Ambienter App-Hintergrund mit weichen Farbflächen */
+  .liquid-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: linear-gradient(165deg, #eef2ff 0%, #e7f0fe 35%, #ecebff 70%, #e5f4ff 100%);
+  }
+  .liquid-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(90px);
+    opacity: 0.55;
+    animation: liquid-float 24s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  .liquid-blob-1 {
+    width: 45vw; height: 45vw; min-width: 320px; min-height: 320px;
+    top: -12%; left: -8%;
+    background: radial-gradient(circle at 30% 30%, rgba(99,102,241,0.45), rgba(99,102,241,0) 70%);
+  }
+  .liquid-blob-2 {
+    width: 40vw; height: 40vw; min-width: 280px; min-height: 280px;
+    top: 20%; right: -12%;
+    background: radial-gradient(circle at 60% 40%, rgba(56,189,248,0.40), rgba(56,189,248,0) 70%);
+    animation-delay: -8s;
+  }
+  .liquid-blob-3 {
+    width: 50vw; height: 50vw; min-width: 340px; min-height: 340px;
+    bottom: -18%; left: 22%;
+    background: radial-gradient(circle at 50% 60%, rgba(167,139,250,0.38), rgba(167,139,250,0) 70%);
+    animation-delay: -16s;
+  }
+  @keyframes liquid-float {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(3vw, 2vh, 0) scale(1.06); }
+    100% { transform: translate3d(-2vw, -2vh, 0) scale(0.97); }
+  }
+
+  /* Standard-Glaspanel — Container, Karten-Gruppen, Panels */
+  .glass {
+    background: linear-gradient(135deg, rgba(255,255,255,0.66), rgba(255,255,255,0.38));
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.65);
+    box-shadow:
+      0 8px 32px rgba(31, 41, 90, 0.10),
+      inset 0 1px 0 rgba(255,255,255,0.85),
+      inset 0 -1px 0 rgba(255,255,255,0.25);
+  }
+
+  /* Kräftigeres Glas — Header, Modals, Sheets */
+  .glass-strong {
+    background: linear-gradient(135deg, rgba(255,255,255,0.85), rgba(255,255,255,0.62));
+    -webkit-backdrop-filter: blur(40px) saturate(200%);
+    backdrop-filter: blur(40px) saturate(200%);
+    border: 1px solid rgba(255,255,255,0.75);
+    box-shadow:
+      0 16px 48px rgba(31, 41, 90, 0.16),
+      inset 0 1px 0 rgba(255,255,255,0.95),
+      inset 0 -1px 0 rgba(255,255,255,0.3);
+  }
+
+  /* Interaktive Glaskarte — Todos, Listeneinträge */
+  .glass-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.78), rgba(255,255,255,0.52));
+    -webkit-backdrop-filter: blur(24px) saturate(170%);
+    backdrop-filter: blur(24px) saturate(170%);
+    border: 1px solid rgba(255,255,255,0.7);
+    box-shadow:
+      0 4px 20px rgba(31, 41, 90, 0.08),
+      inset 0 1px 0 rgba(255,255,255,0.9);
+    transition: box-shadow 0.25s ease, transform 0.25s ease;
+  }
+  .glass-card:hover {
+    box-shadow:
+      0 8px 28px rgba(31, 41, 90, 0.13),
+      inset 0 1px 0 rgba(255,255,255,0.95);
+  }
+
+  /* Kleine Glas-Buttons / Chips */
+  .glass-chip {
+    background: rgba(255,255,255,0.55);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.6);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 4px rgba(31,41,90,0.06);
+  }
+  .glass-chip:hover { background: rgba(255,255,255,0.75); }
+
+  /* Glas-Eingabefelder */
+  .glass-input {
+    background: rgba(255,255,255,0.6);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.7);
+    box-shadow: inset 0 1px 2px rgba(31,41,90,0.05), inset 0 1px 0 rgba(255,255,255,0.7);
+    transition: box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .glass-input:focus {
+    outline: none;
+    background: rgba(255,255,255,0.8);
+    box-shadow:
+      inset 0 1px 2px rgba(31,41,90,0.04),
+      0 0 0 3px rgba(99,102,241,0.25);
+  }
+}
