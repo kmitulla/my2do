@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
-import { subscribeTodos, subscribeCategories, subscribeInbox } from "@/lib/todoService";
+import {
+  subscribeTodos, subscribeCategories, subscribeInbox,
+  subscribeMinimized, saveMinimizedDraft, removeMinimizedDraft,
+} from "@/lib/todoService";
 import QuickAdd from "./QuickAdd";
 import TodoCard from "./TodoCard";
 import FilterBar from "./FilterBar";
@@ -59,8 +62,11 @@ export default function Dashboard() {
   const [inboxCount, setInboxCount] = useState(0);
   const [activeTab, setActiveTab] = useState(0);
   const [selectedTodo, setSelectedTodo] = useState(null);
-  // Minimierte Editoren: ungespeicherte Entwürfe [{ todo, draft }]
-  const [minimized, setMinimized] = useState([]);
+  // Minimierte Editoren: ungespeicherte Entwürfe — in Firestore synchronisiert,
+  // dadurch geräteübergreifend verfügbar. Shape: [{ todoId, draft }]
+  const [minimizedRaw, setMinimizedRaw] = useState([]);
+  // Undo-Banner nach Swipe-Aktionen: { key, label, undo }
+  const [undoInfo, setUndoInfo] = useState(null);
   const [selectedDraft, setSelectedDraft] = useState(null);
   const [showMinList, setShowMinList] = useState(false);
   const [view, setView] = useState(() => localStorage.getItem(LS_VIEW) || "list");
@@ -74,8 +80,16 @@ export default function Dashboard() {
     const unsub1 = subscribeTodos(user.uid, setTodos);
     const unsub2 = subscribeCategories(user.uid, setCategories);
     const unsub3 = subscribeInbox(user.uid, (items) => setInboxCount(items.length));
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub4 = subscribeMinimized(user.uid, setMinimizedRaw);
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [user.uid]);
+
+  // Minimierte Entwürfe mit dem zugehörigen Todo anreichern (für Chips + Wiederöffnen)
+  const minimized = useMemo(() =>
+    minimizedRaw.map((m) => ({
+      ...m,
+      todo: todos.find((t) => t.id === m.todoId) || { id: m.todoId, title: m.draft?.title || "Ohne Titel" },
+    })), [minimizedRaw, todos]);
 
   // Load persisted filters + sort from localStorage (instant) — already handled in useState init above
   // Persist filters to localStorage on change
@@ -136,7 +150,7 @@ export default function Dashboard() {
   const openTodo = (todo) => {
     const existing = minimized.find((m) => m.todo.id === todo.id);
     if (existing) {
-      setMinimized((ms) => ms.filter((m) => m.todo.id !== todo.id));
+      removeMinimizedDraft(user.uid, todo.id);
       setSelectedDraft(existing.draft);
       setSelectedTodo(existing.todo);
     } else {
@@ -150,20 +164,18 @@ export default function Dashboard() {
     setSelectedDraft(null);
   };
 
-  // Editor minimieren: Entwurf merken, Modal schließen
+  // Editor minimieren: Entwurf in Firestore merken (geräteübergreifend), Modal schließen
   const handleMinimize = (draft) => {
     if (selectedTodo) {
-      setMinimized((ms) => [
-        ...ms.filter((m) => m.todo.id !== selectedTodo.id),
-        { todo: selectedTodo, draft },
-      ]);
+      saveMinimizedDraft(user.uid, selectedTodo.id, draft).catch((err) =>
+        console.error("Entwurf speichern fehlgeschlagen:", err));
     }
     closeTodo();
   };
 
   // Minimierten Entwurf verwerfen (wie X: Änderungen werden nicht übernommen)
   const discardMinimized = (todoId) => {
-    setMinimized((ms) => ms.filter((m) => m.todo.id !== todoId));
+    removeMinimizedDraft(user.uid, todoId);
   };
 
   // Handle newly created todo: open it immediately
@@ -318,7 +330,8 @@ export default function Dashboard() {
                   filtered.map((todo) => (
                     view === "grid"
                       ? <TodoCard key={todo.id} todo={todo} view={view} onClick={openTodo} />
-                      : <SwipeableTodoCard key={todo.id} todo={todo} onClick={openTodo} />
+                      : <SwipeableTodoCard key={todo.id} todo={todo} onClick={openTodo}
+                          onAction={(info) => setUndoInfo({ ...info, key: Date.now() })} />
                   ))
                 )}
               </div>
@@ -391,6 +404,11 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Undo-Banner nach Swipe-Aktionen */}
+      {undoInfo && (
+        <UndoBanner key={undoInfo.key} info={undoInfo} onClose={() => setUndoInfo(null)} />
+      )}
+
       {/* Detail Modal — iPhone glass animation */}
       {selectedTodo && (
         <TodoDetailModal
@@ -411,6 +429,64 @@ export default function Dashboard() {
           onClose={() => setShowAI(false)}
         />
       )}
+    </div>
+  );
+}
+
+// Transparenter Glas-Banner oben: 4s Countdown mit Ladebalken, Tippen = Rückgängig
+function UndoBanner({ info, onClose }) {
+  const [undoing, setUndoing] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleUndo = async () => {
+    if (undoing) return;
+    setUndoing(true);
+    try {
+      await info.undo();
+    } catch (err) {
+      console.error("Rückgängig fehlgeschlagen:", err);
+    }
+    onClose();
+  };
+
+  return (
+    <div className="fixed top-[72px] left-1/2 -translate-x-1/2 z-[60] w-[92vw] max-w-sm"
+      style={{ animation: "undo-banner-in 0.3s cubic-bezier(0.22,1,0.36,1) both" }}>
+      <button onClick={handleUndo}
+        className="w-full glass-strong rounded-2xl px-4 pt-2.5 pb-3 text-left active:scale-[0.98] transition-transform overflow-hidden relative">
+        <div className="flex items-center gap-2.5">
+          <span className="w-7 h-7 rounded-full bg-indigo-100/80 text-indigo-600 flex items-center justify-center flex-shrink-0">
+            {undoing ? (
+              <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
+              </svg>
+            )}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-800">Rückgängig?</p>
+            <p className="text-[11px] text-slate-500 truncate">{info.label}</p>
+          </div>
+        </div>
+        {/* Ablaufender Ladebalken (4s) */}
+        <div className="mt-2 h-1 rounded-full bg-slate-200/60 overflow-hidden">
+          <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-400"
+            style={{ animation: "undo-progress 4s linear forwards" }} />
+        </div>
+      </button>
+      <style>{`
+        @keyframes undo-progress { from { width: 100%; } to { width: 0%; } }
+        @keyframes undo-banner-in {
+          from { transform: translateY(-16px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

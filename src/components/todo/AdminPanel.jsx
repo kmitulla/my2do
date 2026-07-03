@@ -16,10 +16,22 @@ export default function AdminPanel() {
   // Klick woanders → Bestätigungszustand zurücksetzen
   const delBtnRef = useConfirmReset(confirmDelete !== null, () => setConfirmDelete(null));
 
+  const [listError, setListError] = useState("");
+
   const fetchUsers = async () => {
     setLoading(true);
-    const snap = await getDocs(collection(db, "users"));
-    setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    setListError("");
+    try {
+      const snap = await getDocs(collection(db, "users"));
+      setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("fetchUsers failed:", err);
+      setListError(
+        err.code === "permission-denied"
+          ? "Keine Berechtigung zum Laden der User-Liste. Die Firestore-Rules müssen aktualisiert werden (siehe src/firestore.rules, Version 0.3 — in der Firebase Console einspielen)."
+          : "Fehler beim Laden: " + (err.message || err)
+      );
+    }
     setLoading(false);
   };
 
@@ -87,6 +99,13 @@ export default function AdminPanel() {
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Alle Users ({users.length})</h3>
         {loading ? (
           <p className="text-slate-400 text-sm">Laden...</p>
+        ) : listError ? (
+          <div className="bg-red-50/70 border border-red-200 rounded-xl p-3">
+            <p className="text-red-600 text-xs">{listError}</p>
+            <button onClick={fetchUsers} className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white font-medium">
+              Erneut versuchen
+            </button>
+          </div>
         ) : (
           <div className="space-y-2">
             {users.map((u) => (

@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { auth, db } from "./firebase";
+import { auth, db, firebaseConfig } from "./firebase";
+import { initializeApp, deleteApp } from "firebase/app";
 import {
+  getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
   createUserWithEmailAndPassword,
   updateProfile,
 } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const FirebaseAuthContext = createContext({});
@@ -56,14 +59,24 @@ export const FirebaseAuthProvider = ({ children }) => {
 
   const logout = () => signOut(auth);
 
+  // User anlegen über eine sekundäre Firebase-App-Instanz:
+  // createUserWithEmailAndPassword meldet sonst den Admin ab und den neuen User an.
   const createUser = async (email, password, displayName) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(cred.user, { displayName });
-    const profile = { uid: cred.user.uid, email, displayName, role: "user", createdAt: serverTimestamp() };
-    await setDoc(doc(db, "users", cred.user.uid), profile);
-    // Also write public profile
-    await setDoc(doc(db, "userProfiles", cred.user.uid), { uid: cred.user.uid, email, displayName }, { merge: true });
-    return cred;
+    const secondary = initializeApp(firebaseConfig, `user-creation-${Date.now()}`);
+    try {
+      const secAuth = getAuth(secondary);
+      const secDb = getFirestore(secondary);
+      const cred = await createUserWithEmailAndPassword(secAuth, email, password);
+      await updateProfile(cred.user, { displayName });
+      const profile = { uid: cred.user.uid, email, displayName, role: "user", createdAt: serverTimestamp() };
+      // Profil-Dokumente als der neue User selbst schreiben (Owner-Rechte in den Rules)
+      await setDoc(doc(secDb, "users", cred.user.uid), profile);
+      await setDoc(doc(secDb, "userProfiles", cred.user.uid), { uid: cred.user.uid, email, displayName }, { merge: true });
+      await signOut(secAuth);
+      return cred;
+    } finally {
+      await deleteApp(secondary).catch(() => {});
+    }
   };
 
   const isAdmin = userProfile?.role === "admin";

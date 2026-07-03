@@ -5,16 +5,16 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
 const PRIO_STYLES = {
-  A: { bar: "bg-red-500", badge: "bg-red-100 text-red-600 border-red-200", label: "Prio A" },
-  B: { bar: "bg-orange-400", badge: "bg-orange-100 text-orange-600 border-orange-200", label: "Prio B" },
-  C: { bar: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-600 border-emerald-200", label: "Prio C" },
+  A: { bar: "bg-red-500", badge: "bg-red-100/70 text-red-600 border-red-200/70", label: "Prio A" },
+  B: { bar: "bg-orange-400", badge: "bg-orange-100/70 text-orange-600 border-orange-200/70", label: "Prio B" },
+  C: { bar: "bg-emerald-500", badge: "bg-emerald-100/70 text-emerald-600 border-emerald-200/70", label: "Prio C" },
 };
 
 const STATUS_STYLES = {
-  offen: "bg-slate-100 text-slate-600",
-  "in Arbeit": "bg-blue-100 text-blue-600",
-  erledigt: "bg-emerald-100 text-emerald-600",
-  wartend: "bg-amber-100 text-amber-600",
+  offen: "bg-white/60 text-slate-600 border border-white/70",
+  "in Arbeit": "bg-blue-100/70 text-blue-600 border border-blue-200/60",
+  erledigt: "bg-emerald-100/70 text-emerald-600 border border-emerald-200/60",
+  wartend: "bg-amber-100/70 text-amber-600 border border-amber-200/60",
 };
 
 function formatDate(ts) {
@@ -62,7 +62,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
                 {todo.title}
               </p>
               {todo.manualStatus && (
-                <span className="inline-flex items-center gap-1 max-w-full mt-1 px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-semibold">
+                <span className="inline-flex items-center gap-1 max-w-full mt-1 px-1.5 py-0.5 rounded-md bg-violet-100/70 text-violet-700 border border-violet-200/70 text-[10px] font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />
                   <span className="truncate">{todo.manualStatus}</span>
                 </span>
@@ -74,13 +74,23 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>
                 {todo.status && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${STATUS_STYLES[todo.status] || STATUS_STYLES.offen}`}>{todo.status}</span>}
                 {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
-                  <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-500">#{tag}</span>
+                  <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100/60 border border-indigo-200/50 text-indigo-500">#{tag}</span>
                 ))}
               </div>
-              {todo.deadline && (
-                <p className={`text-[10px] mt-1.5 font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
-                  📅 {formatDate(todo.deadline)}{isOverdue ? " · überfällig" : ""}
-                </p>
+              {(todo.deadline || todo.wiedervorlage || todo.createdAt) && (
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {todo.deadline && (
+                    <span className={`text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>
+                      📅 {formatDate(todo.deadline)}{isOverdue ? " · überfällig" : ""}
+                    </span>
+                  )}
+                  {todo.wiedervorlage && (
+                    <span className="text-[10px] font-medium text-purple-500">🔄 {formatDate(todo.wiedervorlage)}</span>
+                  )}
+                  {todo.createdAt && (
+                    <span className="text-[10px] text-slate-300 ml-auto">{formatDate(todo.createdAt)}</span>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -113,7 +123,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
           <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>
           {todo.status && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${STATUS_STYLES[todo.status] || STATUS_STYLES.offen}`}>{todo.status}</span>}
           {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
-            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-500">#{tag}</span>
+            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100/60 border border-indigo-200/50 text-indigo-500">#{tag}</span>
           ))}
           {todo.deadline && <span className={`text-[10px] font-medium ${isOverdue ? "text-red-500" : "text-slate-400"}`}>📅 {formatDate(todo.deadline)}{isOverdue ? " · überfällig" : ""}</span>}
           {todo.wiedervorlage && <span className="text-[10px] text-purple-500">🔄 {formatDate(todo.wiedervorlage)}</span>}
