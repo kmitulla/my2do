@@ -1,14 +1,32 @@
 // ════════════════════════════════════════════════════════
-//  FIRESTORE SECURITY RULES – 2Do App  (Version 0.2)
+//  FIRESTORE SECURITY RULES – 2Do App  (Version 0.3)
 //  → Kopiere diese Rules in die Firebase Console:
 //    Firebase Console → Firestore → Rules
+//
+//  NEU in 0.3: Admins (role == "admin" im eigenen users-Dokument)
+//  dürfen alle users/{userId}-Dokumente lesen, ändern und löschen.
+//  Ohne dieses Update funktioniert "Alle Users anzeigen",
+//  Rollen ändern und User löschen im Admin-Panel NICHT.
 // ════════════════════════════════════════════════════════
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── User private data (todos, categories, settings, inbox) ──────────────
+    // Ist der anfragende User ein Admin?
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ── User-Profil-Dokument (users/{userId}) ────────────────────────────────
+    // Owner: voller Zugriff · Admin: lesen (inkl. Liste), ändern, löschen
+    match /users/{userId} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == userId || isAdmin());
+    }
+
+    // ── User private data (todos, categories, settings, inbox, minimized) ───
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }

@@ -29,6 +29,10 @@ export const updateTodo = (uid, id, data) =>
 export const deleteTodo = (uid, id) =>
   deleteDoc(doc(db, "users", uid, "todos", id));
 
+// Gelöschtes Todo unter gleicher ID wiederherstellen (Undo nach Swipe-Löschen)
+export const restoreTodo = (uid, id, data) =>
+  setDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() });
+
 export const addCategory = (uid, name, color) =>
   addDoc(categoriesCol(uid), { name, color, userId: uid, createdAt: serverTimestamp() });
 
@@ -247,6 +251,37 @@ export const moveSection = async (uid, fromBookId, sectionId, toBookId) => {
   await copySection(uid, fromBookId, sectionId, toBookId, null);
   await deleteSection(uid, fromBookId, sectionId);
 };
+
+// --- MINIMIZED EDITOR DRAFTS (geräteübergreifend synchronisiert) ---
+export const minimizedCol = (uid) => collection(db, "users", uid, "minimized");
+
+const sanitizeDraftDate = (v) => {
+  if (!v) return null;
+  if (v.toDate) return v.toDate();
+  if (v instanceof Date) return v;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+export const saveMinimizedDraft = (uid, todoId, draft) => {
+  const data = { ...draft };
+  data.deadline = sanitizeDraftDate(draft.deadline);
+  data.wiedervorlage = sanitizeDraftDate(draft.wiedervorlage);
+  // Firestore akzeptiert kein undefined
+  Object.keys(data).forEach((k) => { if (data[k] === undefined) data[k] = null; });
+  return setDoc(doc(db, "users", uid, "minimized", todoId), {
+    draft: data,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const removeMinimizedDraft = (uid, todoId) =>
+  deleteDoc(doc(db, "users", uid, "minimized", todoId));
+
+export const subscribeMinimized = (uid, callback) =>
+  onSnapshot(query(minimizedCol(uid), orderBy("updatedAt", "asc")), (snap) => {
+    callback(snap.docs.map((d) => ({ todoId: d.id, draft: d.data().draft || {} })));
+  });
 
 // --- FILTER PRESETS (synced per user in Firestore) ---
 export const filterPresetsDoc = (uid) => doc(db, "users", uid, "settings", "filterPresets");

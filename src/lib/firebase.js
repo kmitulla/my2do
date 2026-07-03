@@ -15,6 +15,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export { firebaseConfig };
 
 // Login persistent (bleibt gespeichert)
 setPersistence(auth, browserLocalPersistence);

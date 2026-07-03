@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
-import { updateTodo, deleteTodo } from "@/lib/todoService";
+import { updateTodo, deleteTodo, restoreTodo } from "@/lib/todoService";
 import useConfirmReset from "@/hooks/useConfirmReset";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
@@ -58,9 +58,9 @@ const WIEDERVORLAGE_STEPS = [
 ];
 
 const LEFT_STAGES = [
-  { threshold: 38,  label: "Erledigt",    action: "done",    bg: "rgba(34,197,94,0.92)",  bg2: "rgba(16,185,129,0.88)",  Icon: IconCheck },
-  { threshold: 80,  label: "Archivieren", action: "archive", bg: "rgba(245,158,11,0.92)", bg2: "rgba(217,119,6,0.88)",   Icon: IconArchive },
-  { threshold: 130, label: "Löschen",     action: "delete",  bg: "rgba(239,68,68,0.92)",  bg2: "rgba(220,38,38,0.88)",   Icon: IconTrash },
+  { threshold: 38,  label: "Erledigt",    confirmLabel: "Wirklich erledigen?",   action: "done",    bg: "rgba(34,197,94,0.92)",  bg2: "rgba(16,185,129,0.88)",  Icon: IconCheck },
+  { threshold: 80,  label: "Archivieren", confirmLabel: "Wirklich archivieren?", action: "archive", bg: "rgba(245,158,11,0.92)", bg2: "rgba(217,119,6,0.88)",   Icon: IconArchive },
+  { threshold: 130, label: "Löschen",     confirmLabel: "Wirklich löschen?",     action: "delete",  bg: "rgba(239,68,68,0.92)",  bg2: "rgba(220,38,38,0.88)",   Icon: IconTrash },
 ];
 
 const STEP_W = 38;
@@ -128,7 +128,7 @@ function BurstAnimation({ onDone, color = "#22c55e" }) {
   );
 }
 
-export default function SwipeableTodoCard({ todo, onClick }) {
+export default function SwipeableTodoCard({ todo, onClick, onAction }) {
   const { user } = useFirebaseAuth();
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -222,16 +222,21 @@ export default function SwipeableTodoCard({ todo, onClick }) {
       const abs = Math.abs(d);
       let picked = LEFT_STAGES[0];
       for (const s of LEFT_STAGES) { if (abs >= s.threshold) picked = s; }
-      setConfirmed({ action: picked.action, label: picked.label, bg: picked.bg, bg2: picked.bg2, Icon: picked.Icon });
+      setConfirmed({ action: picked.action, label: picked.label, confirmLabel: picked.confirmLabel, bg: picked.bg, bg2: picked.bg2, Icon: picked.Icon });
       setOffsetX(0);
     } else if (d > STEP_W * 0.7) {
       const stageIdx = Math.min(Math.floor(d / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
       const step = WIEDERVORLAGE_STEPS[stageIdx];
       // Alle Wiedervorlage-Schritte direkt speichern (kein extra Confirm)
       const newDate = addDays(step.days);
+      const prevWiedervorlage = todo.wiedervorlage ?? null;
       setOffsetX(0);
       setShowBurst("wiedervorlage");
       updateTodo(user.uid, todo.id, { wiedervorlage: newDate });
+      onAction?.({
+        label: `„${todo.title}" auf Wiedervorlage ${step.label} gesetzt`,
+        undo: () => updateTodo(user.uid, todo.id, { wiedervorlage: prevWiedervorlage }),
+      });
     } else {
       setOffsetX(0);
     }
@@ -263,14 +268,29 @@ export default function SwipeableTodoCard({ todo, onClick }) {
     clearTimeout(confirmTimer.current);
     const action = confirmed.action;
     setConfirmed(null);
+    const prevStatus = todo.status || "offen";
     if (action === "done") {
       setShowBurst("done");
       await updateTodo(user.uid, todo.id, { status: "erledigt" });
+      onAction?.({
+        label: `„${todo.title}" erledigt`,
+        undo: () => updateTodo(user.uid, todo.id, { status: prevStatus === "erledigt" ? "offen" : prevStatus }),
+      });
     } else if (action === "archive") {
       setShowBurst("archive");
       await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
+      onAction?.({
+        label: `„${todo.title}" archiviert`,
+        undo: () => updateTodo(user.uid, todo.id, { archived: false, status: prevStatus === "erledigt" ? "offen" : prevStatus }),
+      });
     } else if (action === "delete") {
+      // Daten sichern, damit Löschen rückgängig gemacht werden kann
+      const { id: _id, ...snapshot } = todo;
       await deleteTodo(user.uid, todo.id);
+      onAction?.({
+        label: `„${todo.title}" gelöscht`,
+        undo: () => restoreTodo(user.uid, todo.id, snapshot),
+      });
     } else if (action === "wiedervorlage7") {
       setShowBurst("wiedervorlage");
       await updateTodo(user.uid, todo.id, { wiedervorlage: addDays(7) });
@@ -348,7 +368,7 @@ export default function SwipeableTodoCard({ todo, onClick }) {
           onClick={(e) => { e.stopPropagation(); executeConfirmed(); }}
           className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-[20px] cursor-pointer"
           style={{ background: `linear-gradient(135deg, ${confirmed.bg}, ${confirmed.bg2})`, backdropFilter: "blur(4px)" }}>
-          <span className="text-white font-bold text-sm">{confirmed.label}?</span>
+          <span className="text-white font-bold text-sm">{confirmed.confirmLabel || `${confirmed.label}?`}</span>
           <span className="text-white/70 text-[10px] mt-0.5">Tippen zum Bestätigen</span>
         </div>
       )}
