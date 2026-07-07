@@ -8,6 +8,7 @@ import {
   saveNotesTreeState, getNotesTreeState,
 } from "@/lib/todoService";
 import RichEditor from "./RichEditor";
+import SyncIndicator from "./SyncIndicator";
 
 // ── SVG Icons ─────────────────────────────────────────────────────────────────
 const ChevronIcon = ({ open }) => (
@@ -123,7 +124,8 @@ function MoveCopyModal({ uid, type, label, notebooks, currentBookId, currentSect
     <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(15,23,42,0.5)", backdropFilter: "blur(8px)" }}>
       <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-slate-800">„{label}" verschieben / kopieren</h3>
+          <h3 className="text-sm font-bold text-slate-800 flex-1 truncate">„{label}" verschieben / kopieren</h3>
+          <SyncIndicator compact className="mr-2" />
           <button onClick={onClose} className="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -211,6 +213,7 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 flex-shrink-0 gap-2">
         <span className="text-xs font-semibold text-slate-600 truncate flex-1">{page.title}</span>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <SyncIndicator compact />
           <span className={`text-[10px] font-medium transition-colors ${saved ? "text-emerald-500" : "text-amber-400"}`}>
             {saved ? "✓ gespeichert" : "● speichert…"}
           </span>
