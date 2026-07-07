@@ -3,7 +3,9 @@ import { subscribeSyncStatus, getSyncStatus } from "@/lib/syncStatus";
 import { Cloud, CloudOff, RefreshCw, CloudAlert } from "lucide-react";
 
 // Sync-Status-Pill: online / offline / synchronisiert / synchronisieren notwendig.
-// compact = nur Icon + Punkt (für enge Popup-Header)
+// compact = nur Icon + Punkt (für enge Popup-Header).
+// Ohne compact wird der Text erst ab sm-Breite gezeigt (auf dem iPhone nur
+// Icon + Farbe, sonst überlappt der Header).
 export default function SyncIndicator({ compact = false, className = "" }) {
   const { online, pending } = useSyncExternalStore(
     subscribeSyncStatus,
@@ -37,10 +39,10 @@ export default function SyncIndicator({ compact = false, className = "" }) {
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap select-none ${classes} ${className}`}
+      className={`inline-flex flex-shrink-0 items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap select-none ${classes} ${className}`}
     >
       {icon}
-      {!compact && <span>{label}</span>}
+      {!compact && <span className="hidden sm:inline">{label}</span>}
       {!online && pending && (
         <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
       )}
