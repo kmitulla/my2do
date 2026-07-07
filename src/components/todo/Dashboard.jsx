@@ -15,6 +15,7 @@ import AICreateTodo from "./AICreateTodo";
 import NotesPanel from "./NotesPanel";
 import SwipeableTodoCard from "./SwipeableTodoCard";
 import TodoDetailModal from "./TodoDetailModal";
+import SyncIndicator from "./SyncIndicator";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
@@ -218,7 +219,10 @@ export default function Dashboard() {
           <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30 flex-shrink-0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </div>
-          <h1 className="text-lg font-bold text-slate-800 tracking-tight flex-1">2Do</h1>
+          <h1 className="text-lg font-bold text-slate-800 tracking-tight">2Do</h1>
+          <div className="flex-1 flex items-center min-w-0">
+            <SyncIndicator />
+          </div>
           {/* Undo / Redo */}
           <div className="flex items-center gap-0.5">
             <button

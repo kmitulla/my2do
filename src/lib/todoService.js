@@ -1,4 +1,5 @@
 import { db } from "./firebase";
+import { reportPending } from "./syncStatus";
 import {
   collection,
   addDoc,
@@ -14,6 +15,21 @@ import {
   orderBy,
   getDocs,
 } from "firebase/firestore";
+
+// Snapshot-Optionen für Offline-Betrieb:
+// - includeMetadataChanges: Snapshot feuert auch, wenn nur der Pending-Status
+//   wechselt (nötig für den Sync-Indikator)
+// - serverTimestamps "estimate": lokale Pending-Writes liefern geschätzte
+//   Timestamps statt null (sonst bricht offline die Sortierung/Datumsanzeige)
+const snapOpts = { includeMetadataChanges: true };
+const docData = (d) => d.data({ serverTimestamps: "estimate" });
+
+// Unsubscribe-Wrapper: beim Abmelden den Pending-Status der Quelle löschen,
+// damit kein veralteter "nicht synchronisiert"-Zustand hängen bleibt
+const withPendingCleanup = (key, unsub) => () => {
+  reportPending(key, false);
+  unsub();
+};
 
 // TODOS
 export const todosCol = (uid) => collection(db, "users", uid, "todos");
@@ -44,18 +60,22 @@ export const saveSettings = (uid, data) =>
 
 export const subscribeTodos = (uid, callback) => {
   const q = query(todosCol(uid), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    const todos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const unsub = onSnapshot(q, snapOpts, (snap) => {
+    reportPending("todos", snap.metadata.hasPendingWrites);
+    const todos = snap.docs.map((d) => ({ id: d.id, ...docData(d) }));
     callback(todos);
   });
+  return withPendingCleanup("todos", unsub);
 };
 
 export const subscribeCategories = (uid, callback) => {
   const q = query(categoriesCol(uid), orderBy("name"));
-  return onSnapshot(q, (snap) => {
-    const cats = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const unsub = onSnapshot(q, snapOpts, (snap) => {
+    reportPending("categories", snap.metadata.hasPendingWrites);
+    const cats = snap.docs.map((d) => ({ id: d.id, ...docData(d) }));
     callback(cats);
   });
+  return withPendingCleanup("categories", unsub);
 };
 
 // --- SHARED TODOS (collaboration) ---
@@ -101,9 +121,11 @@ export const sendTodoToUsers = async (senderUid, senderName, todo, targetUids, c
 
 export const subscribeInbox = (uid, callback) => {
   const q = query(inboxCol(uid), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const unsub = onSnapshot(q, snapOpts, (snap) => {
+    reportPending("inbox", snap.metadata.hasPendingWrites);
+    callback(snap.docs.map((d) => ({ id: d.id, ...docData(d) })));
   });
+  return withPendingCleanup("inbox", unsub);
 };
 
 export const acceptSharedTodo = async (uid, inboxItem, sharedTodo) => {
@@ -160,7 +182,11 @@ export const deleteNotebook = (uid, id) =>
 
 export const subscribeNotebooks = (uid, callback) => {
   const q = query(notebooksCol(uid), orderBy("createdAt", "asc"));
-  return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+  const unsub = onSnapshot(q, snapOpts, (snap) => {
+    reportPending("notebooks", snap.metadata.hasPendingWrites);
+    callback(snap.docs.map((d) => ({ id: d.id, ...docData(d) })));
+  });
+  return withPendingCleanup("notebooks", unsub);
 };
 
 export const addSection = (uid, bookId, name, parentSectionId = null) =>
@@ -174,7 +200,12 @@ export const deleteSection = (uid, bookId, sectionId) =>
 
 export const subscribeSections = (uid, bookId, callback) => {
   const q = query(sectionsCol(uid, bookId), orderBy("createdAt", "asc"));
-  return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+  const key = `sections:${bookId}`;
+  const unsub = onSnapshot(q, snapOpts, (snap) => {
+    reportPending(key, snap.metadata.hasPendingWrites);
+    callback(snap.docs.map((d) => ({ id: d.id, ...docData(d) })));
+  });
+  return withPendingCleanup(key, unsub);
 };
 
 export const addPage = (uid, bookId, sectionId, title) =>
@@ -188,7 +219,12 @@ export const deletePage = (uid, bookId, sectionId, pageId) =>
 
 export const subscribePages = (uid, bookId, sectionId, callback) => {
   const q = query(pagesCol(uid, bookId, sectionId), orderBy("createdAt", "asc"));
-  return onSnapshot(q, (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+  const key = `pages:${bookId}:${sectionId}`;
+  const unsub = onSnapshot(q, snapOpts, (snap) => {
+    reportPending(key, snap.metadata.hasPendingWrites);
+    callback(snap.docs.map((d) => ({ id: d.id, ...docData(d) })));
+  });
+  return withPendingCleanup(key, unsub);
 };
 
 export const getAllNotebookData = async (uid) => {
@@ -278,10 +314,13 @@ export const saveMinimizedDraft = (uid, todoId, draft) => {
 export const removeMinimizedDraft = (uid, todoId) =>
   deleteDoc(doc(db, "users", uid, "minimized", todoId));
 
-export const subscribeMinimized = (uid, callback) =>
-  onSnapshot(query(minimizedCol(uid), orderBy("updatedAt", "asc")), (snap) => {
-    callback(snap.docs.map((d) => ({ todoId: d.id, draft: d.data().draft || {} })));
+export const subscribeMinimized = (uid, callback) => {
+  const unsub = onSnapshot(query(minimizedCol(uid), orderBy("updatedAt", "asc")), snapOpts, (snap) => {
+    reportPending("minimized", snap.metadata.hasPendingWrites);
+    callback(snap.docs.map((d) => ({ todoId: d.id, draft: docData(d).draft || {} })));
   });
+  return withPendingCleanup("minimized", unsub);
+};
 
 // --- FILTER PRESETS (synced per user in Firestore) ---
 export const filterPresetsDoc = (uid) => doc(db, "users", uid, "settings", "filterPresets");

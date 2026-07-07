@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { addTodo } from "@/lib/todoService";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import SyncIndicator from "./SyncIndicator";
 
 /**
  * Shown when an .eml / .msg file (or text/html drag from Outlook) is dropped.
@@ -58,7 +59,10 @@ export default function EmailDropModal({ parsed, onCreated, onClose, prio = "B",
               <polyline points="22,6 12,13 2,6"/>
             </svg>
           </div>
-          <h2 className="text-base font-bold text-slate-800 flex-1">E-Mail als Notiz</h2>
+          <h2 className="text-base font-bold text-slate-800">E-Mail als Notiz</h2>
+          <div className="flex-1 flex items-center min-w-0">
+            <SyncIndicator />
+          </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>

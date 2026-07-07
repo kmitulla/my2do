@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { addTodo } from "@/lib/todoService";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import SyncIndicator from "./SyncIndicator";
 
 export default function AICreateTodo({ categories, onCreated, onClose }) {
   const { user, userProfile } = useFirebaseAuth();
@@ -73,6 +74,7 @@ Kein Markdown, kein erklaerende Text, nur das JSON-Objekt.`;
         <div className="flex items-center gap-2 mb-4">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-lg">✦</div>
           <h2 className="text-base font-bold text-slate-800">KI-Notiz erstellen</h2>
+          <SyncIndicator className="ml-1" />
           <button onClick={onClose} className="ml-auto w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>

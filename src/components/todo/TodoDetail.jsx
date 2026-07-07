@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import RichEditor from "./RichEditor";
 import QuickDateButtons from "./QuickDateButtons";
 import useConfirmReset from "@/hooks/useConfirmReset";
+import SyncIndicator from "./SyncIndicator";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
@@ -253,7 +254,10 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         {/* Header */}
         <div className="flex-shrink-0 border-b border-white/50 px-5 py-4 flex items-center gap-3 rounded-t-[28px]">
           <div className={`w-3 h-3 rounded-full ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
-          <h2 className="text-base font-semibold text-slate-800 flex-1 truncate">Notiz bearbeiten</h2>
+          <h2 className="text-base font-semibold text-slate-800 truncate">Notiz bearbeiten</h2>
+          <div className="flex-1 flex items-center min-w-0">
+            <SyncIndicator />
+          </div>
           {onMinimize && (
             <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)"
               className="w-8 h-8 rounded-full glass-chip flex items-center justify-center text-slate-500">

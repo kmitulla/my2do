@@ -25,16 +25,26 @@ export const FirebaseAuthProvider = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        const profileDoc = await getDoc(doc(db, "users", firebaseUser.uid));
         const publicProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           displayName: firebaseUser.displayName || firebaseUser.email,
         };
-        // Always upsert public profile for sharing feature
-        await setDoc(doc(db, "userProfiles", firebaseUser.uid), publicProfile, { merge: true });
+        // Always upsert public profile for sharing feature.
+        // Kein await: mit Offline-Persistenz resolven Writes erst nach
+        // Server-Ack – ein await würde die App offline dauerhaft im
+        // Ladebildschirm blockieren. Der Write wird gequeued und gesynct.
+        setDoc(doc(db, "userProfiles", firebaseUser.uid), publicProfile, { merge: true }).catch(() => {});
 
-        if (profileDoc.exists()) {
+        let profileDoc = null;
+        try {
+          // Offline wird das Profil aus dem lokalen Cache bedient
+          profileDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        } catch {
+          // offline + Cache-Miss (allererster Start) → Default-Profil unten
+        }
+
+        if (profileDoc?.exists()) {
           setUserProfile(profileDoc.data());
         } else {
           const profile = {
@@ -42,7 +52,7 @@ export const FirebaseAuthProvider = ({ children }) => {
             role: "user",
             createdAt: serverTimestamp(),
           };
-          await setDoc(doc(db, "users", firebaseUser.uid), profile);
+          setDoc(doc(db, "users", firebaseUser.uid), profile).catch(() => {});
           setUserProfile(profile);
         }
       } else {

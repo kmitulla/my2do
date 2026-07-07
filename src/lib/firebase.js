@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCLjBN11gsUL9SevfKkffhUjM_mUbe3Fa4",
@@ -14,7 +18,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Offline-Persistenz: Daten werden in IndexedDB gecacht, offline gemachte
+// Änderungen überleben App-Neustarts und syncen automatisch beim Reconnect.
+// Fällt ohne IndexedDB (z.B. Private Mode) automatisch auf Memory-Cache zurück.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 export { firebaseConfig };
 
 // Login persistent (bleibt gespeichert)
