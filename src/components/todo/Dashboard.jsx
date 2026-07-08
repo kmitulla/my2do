@@ -459,7 +459,10 @@ function UndoBanner({ info, onClose }) {
   };
 
   return (
-    <div className="fixed top-[72px] left-1/2 -translate-x-1/2 z-[60] w-[92vw] max-w-sm"
+    // Zentrierung über inset-x-0 + mx-auto statt translateX(-50%): die
+    // Einblend-Animation überschreibt `transform` komplett (fill-mode both)
+    // und hob die Zentrierung auf -> Banner hing rechts außerhalb des Screens
+    <div className="fixed top-[72px] inset-x-0 mx-auto z-[60] w-[92vw] max-w-sm"
       style={{ animation: "undo-banner-in 0.3s cubic-bezier(0.22,1,0.36,1) both" }}>
       <button onClick={handleUndo}
         className="w-full glass-strong rounded-2xl px-4 pt-2.5 pb-3 text-left active:scale-[0.98] transition-transform overflow-hidden relative">
