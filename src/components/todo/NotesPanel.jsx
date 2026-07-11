@@ -9,6 +9,7 @@ import {
 } from "@/lib/todoService";
 import RichEditor from "./RichEditor";
 import SyncIndicator from "./SyncIndicator";
+import TimestampInfo from "./TimestampInfo";
 
 // ── SVG Icons ─────────────────────────────────────────────────────────────────
 const ChevronIcon = ({ open }) => (
@@ -190,12 +191,17 @@ function ContextMenu({ items, onClose }) {
 function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen }) {
   const [content, setContent] = useState(page.content || "");
   const [saved, setSaved] = useState(true);
+  // "Zuletzt geändert" für die Fußzeile: startet mit dem gespeicherten Stand,
+  // wird bei jedem Auto-Save auf die lokale Speicherzeit gesetzt
+  const [lastSaved, setLastSaved] = useState(page.updatedAt);
   const timerRef = useRef(null);
   const richEditorRef = useRef(null);
 
   useEffect(() => {
     setContent(page.content || "");
     setSaved(true);
+    setLastSaved(page.updatedAt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id]);
 
   const handleChange = useCallback((val) => {
@@ -205,6 +211,7 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
     timerRef.current = setTimeout(async () => {
       await updatePage(uid, bookId, sectionId, page.id, { content: val });
       setSaved(true);
+      setLastSaved(new Date());
     }, 800);
   }, [uid, bookId, sectionId, page.id]);
 
@@ -227,6 +234,9 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
         <RichEditor ref={richEditorRef} value={content} onChange={handleChange}
           placeholder="Hier tippen… (Strg+T für Zeitmarke)"
           minHeight={fullscreen ? 600 : 300} />
+      </div>
+      <div className="flex-shrink-0 px-3 pt-1 pb-2 border-t border-slate-100">
+        <TimestampInfo createdAt={page.createdAt} updatedAt={lastSaved} />
       </div>
     </div>
   );

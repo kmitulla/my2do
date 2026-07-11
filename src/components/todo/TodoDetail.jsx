@@ -6,6 +6,7 @@ import RichEditor from "./RichEditor";
 import QuickDateButtons from "./QuickDateButtons";
 import useConfirmReset from "@/hooks/useConfirmReset";
 import SyncIndicator from "./SyncIndicator";
+import TimestampInfo from "./TimestampInfo";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
@@ -37,6 +38,9 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   );
   const [saving, setSaving] = useState(false);
   const [savingStay, setSavingStay] = useState(false);
+  // "Zuletzt geändert" für die Header-Anzeige: startet mit dem gespeicherten
+  // Stand, wird bei "Speichern & bleiben" auf die lokale Speicherzeit gesetzt
+  const [lastUpdated, setLastUpdated] = useState(todo.updatedAt);
   const [savedFlash, setSavedFlash] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -91,7 +95,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       setForm({ ...todo, tags: todo.tags || (todo.category ? [todo.category] : []) });
       isDirtyRef.current = false;
     }
-     
+    setLastUpdated(todo.updatedAt);
   }, [todo]);
 
   const set = (k, v) => {
@@ -122,6 +126,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     setSavingStay(true);
     await updateTodo(user.uid, todo.id, buildSaveData());
     isDirtyRef.current = false;
+    setLastUpdated(new Date());
     setSavingStay(false);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1400);
@@ -252,11 +257,14 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         style={{ touchAction: "pan-y", overflowX: "hidden", maxWidth: "100vw" }}>
 
         {/* Header */}
-        <div className="flex-shrink-0 border-b border-white/50 px-5 py-4 flex items-center gap-3 rounded-t-[28px]">
+        <div className="flex-shrink-0 border-b border-white/50 px-5 py-3 flex items-center gap-3 rounded-t-[28px]">
           <div className={`w-3 h-3 rounded-full ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
-          <h2 className="text-base font-semibold text-slate-800 truncate">Notiz bearbeiten</h2>
-          <div className="flex-1 flex items-center min-w-0">
-            <SyncIndicator />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <h2 className="text-base font-semibold text-slate-800 truncate">Notiz bearbeiten</h2>
+              <SyncIndicator />
+            </div>
+            <TimestampInfo createdAt={todo.createdAt} updatedAt={lastUpdated} className="mt-0.5" />
           </div>
           {onMinimize && (
             <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)"
