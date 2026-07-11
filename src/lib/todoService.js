@@ -36,27 +36,40 @@ export const todosCol = (uid) => collection(db, "users", uid, "todos");
 export const categoriesCol = (uid) => collection(db, "users", uid, "categories");
 export const settingsDoc = (uid) => doc(db, "users", uid, "settings", "prefs");
 
-export const addTodo = (uid, data) =>
-  addDoc(todosCol(uid), { ...data, userId: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), archived: false });
+// Write-Promises resolven erst nach Server-Ack – offline würde die UI daran
+// ewig hängen (Speichern-Spinner, Modal schließt nicht). Lokal committen
+// Writes sofort in die Offline-Queue, daher nicht blockieren: Fehler nur loggen.
+const fireWrite = (promise, label) => {
+  promise.catch((err) => console.error(`${label} fehlgeschlagen:`, err));
+};
+
+export const addTodo = (uid, data) => {
+  const ref = doc(todosCol(uid));
+  fireWrite(setDoc(ref, { ...data, userId: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), archived: false }), "addTodo");
+  return ref;
+};
 
 export const updateTodo = (uid, id, data) =>
-  updateDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() });
+  fireWrite(updateDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "updateTodo");
 
 export const deleteTodo = (uid, id) =>
-  deleteDoc(doc(db, "users", uid, "todos", id));
+  fireWrite(deleteDoc(doc(db, "users", uid, "todos", id)), "deleteTodo");
 
 // Gelöschtes Todo unter gleicher ID wiederherstellen (Undo nach Swipe-Löschen)
 export const restoreTodo = (uid, id, data) =>
-  setDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() });
+  fireWrite(setDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "restoreTodo");
 
-export const addCategory = (uid, name, color) =>
-  addDoc(categoriesCol(uid), { name, color, userId: uid, createdAt: serverTimestamp() });
+export const addCategory = (uid, name, color) => {
+  const ref = doc(categoriesCol(uid));
+  fireWrite(setDoc(ref, { name, color, userId: uid, createdAt: serverTimestamp() }), "addCategory");
+  return ref;
+};
 
 export const deleteCategory = (uid, id) =>
-  deleteDoc(doc(db, "users", uid, "categories", id));
+  fireWrite(deleteDoc(doc(db, "users", uid, "categories", id)), "deleteCategory");
 
 export const saveSettings = (uid, data) =>
-  setDoc(settingsDoc(uid), data, { merge: true });
+  fireWrite(setDoc(settingsDoc(uid), data, { merge: true }), "saveSettings");
 
 export const subscribeTodos = (uid, callback) => {
   const q = query(todosCol(uid), orderBy("createdAt", "desc"));
@@ -171,14 +184,17 @@ export const notebooksCol = (uid) => collection(db, "users", uid, "notebooks");
 export const sectionsCol = (uid, bookId) => collection(db, "users", uid, "notebooks", bookId, "sections");
 export const pagesCol = (uid, bookId, sectionId) => collection(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages");
 
-export const addNotebook = (uid, name) =>
-  addDoc(notebooksCol(uid), { name, userId: uid, createdAt: serverTimestamp() });
+export const addNotebook = (uid, name) => {
+  const ref = doc(notebooksCol(uid));
+  fireWrite(setDoc(ref, { name, userId: uid, createdAt: serverTimestamp() }), "addNotebook");
+  return ref;
+};
 
 export const updateNotebook = (uid, id, data) =>
-  updateDoc(doc(db, "users", uid, "notebooks", id), data);
+  fireWrite(updateDoc(doc(db, "users", uid, "notebooks", id), data), "updateNotebook");
 
 export const deleteNotebook = (uid, id) =>
-  deleteDoc(doc(db, "users", uid, "notebooks", id));
+  fireWrite(deleteDoc(doc(db, "users", uid, "notebooks", id)), "deleteNotebook");
 
 export const subscribeNotebooks = (uid, callback) => {
   const q = query(notebooksCol(uid), orderBy("createdAt", "asc"));
@@ -189,14 +205,17 @@ export const subscribeNotebooks = (uid, callback) => {
   return withPendingCleanup("notebooks", unsub);
 };
 
-export const addSection = (uid, bookId, name, parentSectionId = null) =>
-  addDoc(sectionsCol(uid, bookId), { name, parentSectionId, userId: uid, createdAt: serverTimestamp() });
+export const addSection = (uid, bookId, name, parentSectionId = null) => {
+  const ref = doc(sectionsCol(uid, bookId));
+  fireWrite(setDoc(ref, { name, parentSectionId, userId: uid, createdAt: serverTimestamp() }), "addSection");
+  return ref;
+};
 
 export const updateSection = (uid, bookId, sectionId, data) =>
-  updateDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId), data);
+  fireWrite(updateDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId), data), "updateSection");
 
 export const deleteSection = (uid, bookId, sectionId) =>
-  deleteDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId));
+  fireWrite(deleteDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId)), "deleteSection");
 
 export const subscribeSections = (uid, bookId, callback) => {
   const q = query(sectionsCol(uid, bookId), orderBy("createdAt", "asc"));
@@ -208,14 +227,17 @@ export const subscribeSections = (uid, bookId, callback) => {
   return withPendingCleanup(key, unsub);
 };
 
-export const addPage = (uid, bookId, sectionId, title) =>
-  addDoc(pagesCol(uid, bookId, sectionId), { title, content: "", userId: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+export const addPage = (uid, bookId, sectionId, title) => {
+  const ref = doc(pagesCol(uid, bookId, sectionId));
+  fireWrite(setDoc(ref, { title, content: "", userId: uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }), "addPage");
+  return ref;
+};
 
 export const updatePage = (uid, bookId, sectionId, pageId, data) =>
-  updateDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId), { ...data, updatedAt: serverTimestamp() });
+  fireWrite(updateDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId), { ...data, updatedAt: serverTimestamp() }), "updatePage");
 
 export const deletePage = (uid, bookId, sectionId, pageId) =>
-  deleteDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId));
+  fireWrite(deleteDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId)), "deletePage");
 
 export const subscribePages = (uid, bookId, sectionId, callback) => {
   const q = query(pagesCol(uid, bookId, sectionId), orderBy("createdAt", "asc"));
