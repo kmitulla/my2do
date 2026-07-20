@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC } from "@/lib/firebaseAuth";
 import { deleteCategory } from "@/lib/todoService";
 import { updatePassword } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
@@ -8,7 +8,7 @@ import ExportPanel from "./ExportPanel";
 import useConfirmReset from "@/hooks/useConfirmReset";
 
 export default function SettingsPanel({ categories, todos, onCategoryDeleted }) {
-  const { user, userProfile, logout } = useFirebaseAuth();
+  const { user, userProfile, logout, updateUserProfile } = useFirebaseAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmCatDelete, setConfirmCatDelete] = useState(null);
   // Klick woanders → Bestätigungszustand zurücksetzen
@@ -19,6 +19,10 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
   const [openaiKey, setOpenaiKey] = useState(userProfile?.openaiKey || "");
   const [aiEnabled, setAiEnabled] = useState(userProfile?.aiEnabled || false);
   const [aiSaved, setAiSaved] = useState(false);
+  const [undoDuration, setUndoDuration] = useState(
+    userProfile?.undoDurationSec ?? DEFAULT_UNDO_DURATION_SEC
+  );
+  const [undoSaved, setUndoSaved] = useState(false);
 
   const handleDeleteCat = async (cat) => {
     if (confirmCatDelete !== cat.id) { setConfirmCatDelete(cat.id); return; }
@@ -42,6 +46,12 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
     await updateDoc(doc(db, "users", user.uid), { openaiKey, aiEnabled });
     setAiSaved(true);
     setTimeout(() => setAiSaved(false), 2000);
+  };
+
+  const handleSaveUndo = async () => {
+    await updateUserProfile({ undoDurationSec: undoDuration });
+    setUndoSaved(true);
+    setTimeout(() => setUndoSaved(false), 2000);
   };
 
   return (
@@ -87,6 +97,36 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
             </button>
           </>
         )}
+      </div>
+
+      {/* Rückgängig-Banner Dauer */}
+      <div className="glass rounded-[24px] p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-sky-400 flex items-center justify-center text-white">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
+            </svg>
+          </span>
+          Rückgängig-Anzeige
+        </h3>
+        <p className="text-xs text-slate-500">
+          Wie lange das „Rückgängig?"-Banner nach einer Swipe-Aktion eingeblendet bleibt.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="range" min={1} max={15} step={1}
+            value={undoDuration}
+            onChange={(e) => setUndoDuration(Number(e.target.value))}
+            className="flex-1 accent-indigo-500"
+          />
+          <span className="text-sm font-semibold text-slate-700 w-12 text-right tabular-nums">
+            {undoDuration}s
+          </span>
+        </div>
+        <button onClick={handleSaveUndo}
+          className="w-full py-2 rounded-xl bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 transition-all">
+          {undoSaved ? "✓ Gespeichert!" : "Dauer speichern"}
+        </button>
       </div>
 
       {/* Password */}
