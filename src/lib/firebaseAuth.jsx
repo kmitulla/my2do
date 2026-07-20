@@ -12,6 +12,9 @@ import {
 import { getFirestore } from "firebase/firestore";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
+// Default-Einblendedauer des Rückgängig-Banners (Sekunden)
+export const DEFAULT_UNDO_DURATION_SEC = 4;
+
 const FirebaseAuthContext = createContext({});
 
 export const useFirebaseAuth = () => useContext(FirebaseAuthContext);
@@ -89,10 +92,18 @@ export const FirebaseAuthProvider = ({ children }) => {
     }
   };
 
+  // Einstellungen ins Profil schreiben (users/{uid}) und lokalen State sofort
+  // aktualisieren. Firestore synchronisiert das Profil geräteübergreifend.
+  const updateUserProfile = async (updates) => {
+    if (!user) return;
+    setUserProfile((prev) => ({ ...(prev || {}), ...updates }));
+    await setDoc(doc(db, "users", user.uid), updates, { merge: true });
+  };
+
   const isAdmin = userProfile?.role === "admin";
 
   return (
-    <FirebaseAuthContext.Provider value={{ user, userProfile, loading, login, logout, createUser, isAdmin }}>
+    <FirebaseAuthContext.Provider value={{ user, userProfile, loading, login, logout, createUser, isAdmin, updateUserProfile }}>
       {children}
     </FirebaseAuthContext.Provider>
   );

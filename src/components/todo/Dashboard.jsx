@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC } from "@/lib/firebaseAuth";
 import {
   subscribeTodos, subscribeCategories, subscribeInbox,
   subscribeMinimized, saveMinimizedDraft, removeMinimizedDraft,
@@ -410,7 +410,12 @@ export default function Dashboard() {
 
       {/* Undo-Banner nach Swipe-Aktionen */}
       {undoInfo && (
-        <UndoBanner key={undoInfo.key} info={undoInfo} onClose={() => setUndoInfo(null)} />
+        <UndoBanner
+          key={undoInfo.key}
+          info={undoInfo}
+          durationSec={userProfile?.undoDurationSec ?? DEFAULT_UNDO_DURATION_SEC}
+          onClose={() => setUndoInfo(null)}
+        />
       )}
 
       {/* Detail Modal — iPhone glass animation */}
@@ -437,15 +442,15 @@ export default function Dashboard() {
   );
 }
 
-// Transparenter Glas-Banner oben: 4s Countdown mit Ladebalken, Tippen = Rückgängig
-function UndoBanner({ info, onClose }) {
+// Transparenter Glas-Banner oben: Countdown mit Ladebalken, Tippen = Rückgängig.
+// Die Einblendedauer (durationSec) ist pro User in den Einstellungen konfigurierbar.
+function UndoBanner({ info, onClose, durationSec = 4 }) {
   const [undoing, setUndoing] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(onClose, 4000);
+    const t = setTimeout(onClose, durationSec * 1000);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [durationSec, onClose]);
 
   const handleUndo = async () => {
     if (undoing) return;
@@ -481,10 +486,10 @@ function UndoBanner({ info, onClose }) {
             <p className="text-[11px] text-slate-500 truncate">{info.label}</p>
           </div>
         </div>
-        {/* Ablaufender Ladebalken (4s) */}
+        {/* Ablaufender Ladebalken (Dauer = durationSec) */}
         <div className="mt-2 h-1 rounded-full bg-slate-200/60 overflow-hidden">
           <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-400"
-            style={{ animation: "undo-progress 4s linear forwards" }} />
+            style={{ animation: `undo-progress ${durationSec}s linear forwards` }} />
         </div>
       </button>
       <style>{`
