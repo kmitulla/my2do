@@ -49,6 +49,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   const archiveBtnRef = useConfirmReset(confirmArchive, () => setConfirmArchive(false));
   const [newCat, setNewCat] = useState("");
   const [showNewCat, setShowNewCat] = useState(false);
+  const [exportingWord, setExportingWord] = useState(false);
 
   // Share state
   const [showShare, setShowShare] = useState(false);
@@ -225,6 +226,26 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     ].join("\n");
     const body = encodeURIComponent(cleanDesc + info);
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+  };
+
+  // Aktuelles 2do als Word-Datei (.docx) herunterladen.
+  // docx-Bibliothek wird erst beim Klick nachgeladen (kleines Haupt-Bundle).
+  const exportWord = async () => {
+    if (exportingWord) return;
+    setExportingWord(true);
+    try {
+      const { exportTodoToDocx } = await import("@/lib/docxExport");
+      await exportTodoToDocx({
+        ...form, // aktueller Stand inkl. noch nicht gespeicherter Änderungen
+        createdAt: todo.createdAt,
+        updatedAt: lastUpdated,
+      });
+    } catch (err) {
+      console.error("Word-Export fehlgeschlagen:", err);
+      alert("Word-Export fehlgeschlagen: " + (err?.message || err));
+    } finally {
+      setExportingWord(false);
+    }
   };
 
   const loadUsers = async () => {
@@ -409,21 +430,33 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
           <div className="border-t border-slate-100 pt-4">
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-              E-Mail &amp; Kalender
+              E-Mail, Kalender &amp; Word
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button onClick={openEmailClient}
-                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all flex items-center justify-center gap-2">
+                className="flex-1 min-w-[104px] py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all flex items-center justify-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                 E-Mail
               </button>
               <button onClick={openCalendar}
-                className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                className="flex-1 min-w-[104px] py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 Kalender
               </button>
+              <button onClick={exportWord} disabled={exportingWord} title="Als Word-Datei (.docx) exportieren"
+                className="flex-1 min-w-[104px] py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60">
+                {exportingWord ? (
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                    <path d="M8 13l1.4 4.5L11 13l1.6 4.5L14 13" strokeWidth="1.6"/>
+                  </svg>
+                )}
+                {exportingWord ? "Erstellt…" : "Word"}
+              </button>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender</p>
+            <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender · Word: .docx mit Titel &amp; Details</p>
           </div>
 
           {/* Share Section — temporarily hidden */}

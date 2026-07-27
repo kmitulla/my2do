@@ -59,6 +59,12 @@ const DotsIcon = () => (
     <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
   </svg>
 );
+const WordIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+    <path d="M8 13l1.4 4.5L11 13l1.6 4.5L14 13" strokeWidth="1.6"/>
+  </svg>
+);
 
 // ── Inline editable title ─────────────────────────────────────────────────────
 function InlineEdit({ value, onSave, className = "" }) {
@@ -188,12 +194,13 @@ function ContextMenu({ items, onClose }) {
 }
 
 // ── Page Editor ───────────────────────────────────────────────────────────────
-function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen }) {
+function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen, breadcrumb }) {
   const [content, setContent] = useState(page.content || "");
   const [saved, setSaved] = useState(true);
   // "Zuletzt geändert" für die Fußzeile: startet mit dem gespeicherten Stand,
   // wird bei jedem Auto-Save auf die lokale Speicherzeit gesetzt
   const [lastSaved, setLastSaved] = useState(page.updatedAt);
+  const [exporting, setExporting] = useState(false);
   const timerRef = useRef(null);
   const richEditorRef = useRef(null);
 
@@ -215,6 +222,28 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
     }, 800);
   }, [uid, bookId, sectionId, page.id]);
 
+  // Aktuelle Seite als Word-Datei (.docx) herunterladen.
+  // docx-Bibliothek wird erst beim Klick nachgeladen (kleines Haupt-Bundle).
+  const handleWordExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const { exportNoteToDocx } = await import("@/lib/docxExport");
+      await exportNoteToDocx({
+        title: page.title,
+        content, // lokaler Stand inkl. noch nicht gespeicherter Änderungen
+        createdAt: page.createdAt,
+        updatedAt: lastSaved,
+        breadcrumb,
+      });
+    } catch (err) {
+      console.error("Word-Export fehlgeschlagen:", err);
+      alert("Word-Export fehlgeschlagen: " + (err?.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 flex-shrink-0 gap-2">
@@ -224,6 +253,12 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
           <span className={`text-[10px] font-medium transition-colors ${saved ? "text-emerald-500" : "text-amber-400"}`}>
             {saved ? "✓ gespeichert" : "● speichert…"}
           </span>
+          <button onClick={handleWordExport} disabled={exporting} title="Als Word-Datei (.docx) exportieren"
+            className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center hover:bg-indigo-100 transition-all disabled:opacity-50">
+            {exporting
+              ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+              : <WordIcon />}
+          </button>
           <button onClick={onToggleFullscreen} title={fullscreen ? "Vollbild beenden" : "Vollbild"}
             className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all">
             {fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
@@ -326,7 +361,7 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
       {open && (
         <div>
           {pages.map((p) => (
-            <PageRow key={p.id} uid={uid} bookId={bookId} sectionId={section.id} page={p}
+            <PageRow key={p.id} uid={uid} bookId={bookId} sectionId={section.id} sectionName={section.name} page={p}
               selectedPage={selectedPage} onSelectPage={onSelectPage}
               notebooks={notebooks} indent={16} onMoveCopy={onMoveCopy} />
           ))}
@@ -354,7 +389,7 @@ function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPag
 }
 
 // ── Page row ─────────────────────────────────────────────────────────────────
-function PageRow({ uid, bookId, sectionId, page, selectedPage, onSelectPage, notebooks, indent, onMoveCopy }) {
+function PageRow({ uid, bookId, sectionId, sectionName, page, selectedPage, onSelectPage, notebooks, indent, onMoveCopy }) {
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
@@ -374,7 +409,7 @@ function PageRow({ uid, bookId, sectionId, page, selectedPage, onSelectPage, not
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl group transition-all cursor-pointer relative ${
       selectedPage?.page.id === page.id ? "bg-indigo-100 text-indigo-700" : "hover:bg-slate-100/80 text-slate-600"
-    }`} style={{ marginLeft: indent }} onClick={() => onSelectPage({ page, bookId, sectionId })}>
+    }`} style={{ marginLeft: indent }} onClick={() => onSelectPage({ page, bookId, sectionId, sectionName })}>
       <span className="flex-shrink-0 text-slate-400"><FileIcon /></span>
       <span className="text-xs flex-1 truncate">{page.title}</span>
       <div className="relative flex-shrink-0">
@@ -472,14 +507,15 @@ function NotebookNode({ uid, notebook, selectedPage, onSelectPage, notebooks, op
 }
 
 // ── Mobile Page Modal ─────────────────────────────────────────────────────────
-function PageModal({ uid, selectedPage, onClose }) {
+function PageModal({ uid, selectedPage, breadcrumb, onClose }) {
   const [fullscreen, setFullscreen] = useState(false);
 
   if (fullscreen) {
     return (
       <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
         <PageEditor uid={uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-          page={selectedPage.page} fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
+          page={selectedPage.page} breadcrumb={breadcrumb}
+          fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
       </div>
     );
   }
@@ -498,7 +534,8 @@ function PageModal({ uid, selectedPage, onClose }) {
         </div>
         <div className="flex-1 overflow-y-auto">
           <PageEditor uid={uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-            page={selectedPage.page} fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
+            page={selectedPage.page} breadcrumb={breadcrumb}
+            fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
         </div>
       </div>
     </div>
@@ -558,12 +595,19 @@ export default function NotesPanel() {
     setNewBookName(""); setAddingBook(false);
   };
 
+  // "Notizbuch › Abschnitt" – Kopfzeile des Word-Exports
+  const breadcrumb = selectedPage
+    ? [notebooks.find((nb) => nb.id === selectedPage.bookId)?.name, selectedPage.sectionName]
+        .filter(Boolean).join(" › ")
+    : "";
+
   // Desktop fullscreen overlay
   if (!isMobile && fullscreen && selectedPage) {
     return (
       <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
         <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-          page={selectedPage.page} fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
+          page={selectedPage.page} breadcrumb={breadcrumb}
+          fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
       </div>
     );
   }
@@ -610,7 +654,8 @@ export default function NotesPanel() {
             {sidebarContent}
           </div>
           {selectedPage && (
-            <PageModal uid={user.uid} selectedPage={selectedPage} onClose={() => setSelectedPage(null)} />
+            <PageModal uid={user.uid} selectedPage={selectedPage} breadcrumb={breadcrumb}
+              onClose={() => setSelectedPage(null)} />
           )}
         </>
       ) : (
@@ -621,7 +666,8 @@ export default function NotesPanel() {
           <div className="flex-1 glass rounded-[24px] overflow-hidden flex flex-col">
             {selectedPage ? (
               <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-                page={selectedPage.page} fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
+                page={selectedPage.page} breadcrumb={breadcrumb}
+                fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
             ) : (
               <div className="flex items-center justify-center h-full text-center px-6 py-12">
                 <div>
