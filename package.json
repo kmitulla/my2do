@@ -52,6 +52,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
+    "docx": "^9.7.1",
     "embla-carousel-react": "^8.5.2",
     "firebase": "^10.14.1",
     "framer-motion": "^11.16.4",
