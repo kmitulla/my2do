@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { subscribeFilterPresets, saveFilterPresets } from "@/lib/todoService";
+import { StarIcon } from "./FavoriteButton";
 
 const SORT_OPTIONS = [
   { value: "createdAt_desc", label: "Erstellt (neu)" },
@@ -82,6 +83,15 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
           className="flex-1 px-3 py-2 rounded-[18px] glass-input text-slate-700 text-sm">
           {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+
+        {/* Nur Favoriten */}
+        <button onClick={() => updateFilter("onlyFavorites", !filters.onlyFavorites)}
+          aria-pressed={!!filters.onlyFavorites}
+          className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center ${
+            filters.onlyFavorites ? "bg-amber-400 text-white shadow-md shadow-amber-400/30" : "glass-chip text-slate-600"
+          }`} title={filters.onlyFavorites ? "Alle anzeigen" : "Nur Favoriten anzeigen"}>
+          <StarIcon filled={!!filters.onlyFavorites} size={14} />
+        </button>
 
         {/* Presets button */}
         <button onClick={() => { setShowPresets(!showPresets); setShowFilters(false); }}

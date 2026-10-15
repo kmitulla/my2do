@@ -8,12 +8,33 @@ import {
   signOut,
   createUserWithEmailAndPassword,
   updateProfile,
+  sendPasswordResetEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 // Default-Einblendedauer des Rückgängig-Banners (Sekunden)
 export const DEFAULT_UNDO_DURATION_SEC = 4;
+
+// Firebase-Auth-Fehlercodes → verständliche Meldungen
+const AUTH_ERRORS = {
+  "auth/invalid-email": "Ungültige E-Mail-Adresse.",
+  "auth/missing-email": "Bitte E-Mail-Adresse eingeben.",
+  "auth/wrong-password": "Das aktuelle Passwort ist falsch.",
+  "auth/invalid-credential": "Das aktuelle Passwort ist falsch.",
+  "auth/invalid-login-credentials": "Das aktuelle Passwort ist falsch.",
+  "auth/weak-password": "Das neue Passwort ist zu schwach (mindestens 6 Zeichen).",
+  "auth/password-does-not-meet-requirements": "Das neue Passwort erfüllt die Passwort-Richtlinien nicht.",
+  "auth/too-many-requests": "Zu viele Versuche. Bitte kurz warten und erneut versuchen.",
+  "auth/network-request-failed": "Keine Internetverbindung. Bitte später erneut versuchen.",
+  "auth/requires-recent-login": "Bitte einmal ab- und wieder anmelden und es dann erneut versuchen.",
+};
+
+export const authErrorMessage = (err) =>
+  AUTH_ERRORS[err?.code] || "Fehler: " + (err?.message || err);
 
 const FirebaseAuthContext = createContext({});
 
@@ -72,6 +93,29 @@ export const FirebaseAuthProvider = ({ children }) => {
 
   const logout = () => signOut(auth);
 
+  // Link zum Zurücksetzen des Passworts per E-Mail senden. Der Link führt
+  // nach dem Zurücksetzen zurück zur App – ist die Domain in Firebase nicht
+  // als "Authorized domain" freigegeben, wird ohne Rücksprung-Link gesendet.
+  const resetPassword = async (email) => {
+    const continueUrl = window.location.origin + window.location.pathname;
+    try {
+      await sendPasswordResetEmail(auth, email, { url: continueUrl });
+    } catch (err) {
+      if (err?.code !== "auth/unauthorized-continue-uri" && err?.code !== "auth/invalid-continue-uri") throw err;
+      await sendPasswordResetEmail(auth, email);
+    }
+  };
+
+  // Passwort ändern: Firebase verlangt für updatePassword eine frische
+  // Anmeldung (sonst auth/requires-recent-login) – daher zuerst mit dem
+  // aktuellen Passwort re-authentifizieren.
+  const changePassword = async (currentPassword, newPassword) => {
+    const current = auth.currentUser;
+    const cred = EmailAuthProvider.credential(current.email, currentPassword);
+    await reauthenticateWithCredential(current, cred);
+    await updatePassword(current, newPassword);
+  };
+
   // User anlegen über eine sekundäre Firebase-App-Instanz:
   // createUserWithEmailAndPassword meldet sonst den Admin ab und den neuen User an.
   const createUser = async (email, password, displayName) => {
@@ -103,7 +147,7 @@ export const FirebaseAuthProvider = ({ children }) => {
   const isAdmin = userProfile?.role === "admin";
 
   return (
-    <FirebaseAuthContext.Provider value={{ user, userProfile, loading, login, logout, createUser, isAdmin, updateUserProfile }}>
+    <FirebaseAuthContext.Provider value={{ user, userProfile, loading, login, logout, resetPassword, changePassword, createUser, isAdmin, updateUserProfile }}>
       {children}
     </FirebaseAuthContext.Provider>
   );

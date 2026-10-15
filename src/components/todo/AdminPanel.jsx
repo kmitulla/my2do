@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, updateDoc, doc, deleteDoc } from "firebase/firestore";
-import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import { useFirebaseAuth, authErrorMessage } from "@/lib/firebaseAuth";
 import useConfirmReset from "@/hooks/useConfirmReset";
 
 export default function AdminPanel() {
-  const { createUser, isAdmin } = useFirebaseAuth();
+  const { createUser, isAdmin, resetPassword } = useFirebaseAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newUser, setNewUser] = useState({ email: "", password: "", displayName: "" });
@@ -17,6 +17,8 @@ export default function AdminPanel() {
   const delBtnRef = useConfirmReset(confirmDelete !== null, () => setConfirmDelete(null));
 
   const [listError, setListError] = useState("");
+  // Passwort-Reset-Mail pro User: { [uid]: "sending" | "sent" }
+  const [resetState, setResetState] = useState({});
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -56,6 +58,17 @@ export default function AdminPanel() {
   const setRole = async (uid, role) => {
     await updateDoc(doc(db, "users", uid), { role });
     fetchUsers();
+  };
+
+  const handleSendReset = async (u) => {
+    setResetState((prev) => ({ ...prev, [u.id]: "sending" }));
+    try {
+      await resetPassword(u.email);
+      setResetState((prev) => ({ ...prev, [u.id]: "sent" }));
+    } catch (err) {
+      setResetState((prev) => ({ ...prev, [u.id]: undefined }));
+      alert(`Reset-Mail an ${u.email} fehlgeschlagen: ${authErrorMessage(err)}`);
+    }
   };
 
   const handleDeleteUser = async (uid) => {
@@ -122,6 +135,18 @@ export default function AdminPanel() {
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
                 </select>
+                {u.email && (
+                  <button onClick={() => handleSendReset(u)} disabled={!!resetState[u.id]}
+                    title={`Link zum Zurücksetzen des Passworts an ${u.email} senden`}
+                    className={`text-xs px-2 py-1 rounded-lg transition-all flex items-center gap-1 ${resetState[u.id] === "sent" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-500 hover:bg-blue-100"} disabled:cursor-default`}>
+                    {resetState[u.id] === "sent" ? "✓" : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2"/><path d="M16 7l3 3"/><path d="M18.5 4.5l2 2"/>
+                      </svg>
+                    )}
+                    <span className="hidden sm:inline">{resetState[u.id] === "sent" ? "Gesendet" : resetState[u.id] === "sending" ? "Sende..." : "PW-Reset"}</span>
+                  </button>
+                )}
                 <button ref={confirmDelete === u.id ? delBtnRef : null} onClick={() => handleDeleteUser(u.id)}
                   className={`text-xs px-2 py-1 rounded-lg transition-all ${confirmDelete === u.id ? "bg-red-500 text-white" : "bg-red-50 text-red-500 hover:bg-red-100"}`}>
                   {confirmDelete === u.id ? "Sicher?" : "×"}

@@ -3,6 +3,7 @@ import { updateTodo } from "@/lib/todoService";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import FavoriteButton from "./FavoriteButton";
 
 const PRIO_STYLES = {
   A: { bar: "bg-red-500", badge: "bg-red-100/70 text-red-600 border-red-200/70", label: "Prio A" },
@@ -58,9 +59,12 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
               </div>
             </button>
             <div className="flex-1 min-w-0">
-              <p className={`text-sm font-semibold text-slate-800 leading-snug line-clamp-2 ${todo.status === "erledigt" ? "line-through opacity-50" : ""}`}>
-                {todo.title}
-              </p>
+              <div className="flex items-start gap-1">
+                <p className={`flex-1 min-w-0 text-sm font-semibold text-slate-800 leading-snug line-clamp-2 ${todo.status === "erledigt" ? "line-through opacity-50" : ""}`}>
+                  {todo.title}
+                </p>
+                <FavoriteButton todo={todo} size={14} className="w-6 h-6 -mt-1 -mr-1.5 rounded-full" />
+              </div>
               {todo.manualStatus && (
                 <span className="inline-flex items-center gap-1 max-w-full mt-1 px-1.5 py-0.5 rounded-md bg-violet-100/70 text-violet-700 border border-violet-200/70 text-[10px] font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-violet-500 flex-shrink-0" />
@@ -129,6 +133,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
           {todo.wiedervorlage && <span className="text-[10px] text-purple-500">🔄 {formatDate(todo.wiedervorlage)}</span>}
         </div>
       </div>
+      <FavoriteButton todo={todo} className="w-7 h-7 -mx-1 rounded-full" />
       <svg className="w-4 h-4 text-slate-300 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9,18 15,12 9,6" /></svg>
     </div>
   );

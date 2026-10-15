@@ -7,6 +7,7 @@ import QuickDateButtons from "./QuickDateButtons";
 import useConfirmReset from "@/hooks/useConfirmReset";
 import SyncIndicator from "./SyncIndicator";
 import TimestampInfo from "./TimestampInfo";
+import FavoriteButton from "./FavoriteButton";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
@@ -42,6 +43,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // Stand, wird bei "Speichern & bleiben" auf die lokale Speicherzeit gesetzt
   const [lastUpdated, setLastUpdated] = useState(todo.updatedAt);
   const [savedFlash, setSavedFlash] = useState(false);
+  // Favorit wird sofort gespeichert (nicht erst mit "Speichern")
+  const [favorite, setFavorite] = useState(!!todo.favorite);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   // Klick irgendwo anders → "Wirklich?"-Zustand zurücksetzen
@@ -97,6 +100,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       isDirtyRef.current = false;
     }
     setLastUpdated(todo.updatedAt);
+    setFavorite(!!todo.favorite);
   }, [todo]);
 
   const set = (k, v) => {
@@ -106,6 +110,10 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
 
   const buildSaveData = () => {
     const data = { ...form };
+    // Favorit wird separat (sofort) gespeichert — ein älterer Formular- oder
+    // Entwurfsstand darf ihn beim Speichern nicht überschreiben
+    delete data.favorite;
+    delete data.favoritedAt;
     ["deadline", "wiedervorlage"].forEach((k) => {
       if (data[k] && typeof data[k] === "string") data[k] = new Date(data[k]);
       if (data[k] === "") data[k] = null;
@@ -287,6 +295,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
             </div>
             <TimestampInfo createdAt={todo.createdAt} updatedAt={lastUpdated} className="mt-0.5" />
           </div>
+          <FavoriteButton todo={todo} favorite={favorite} onToggled={setFavorite}
+            size={14} className="w-8 h-8 rounded-full glass-chip" />
           {onMinimize && (
             <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)"
               className="w-8 h-8 rounded-full glass-chip flex items-center justify-center text-slate-500">

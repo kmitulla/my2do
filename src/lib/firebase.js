@@ -18,6 +18,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+// E-Mails von Firebase Auth (z.B. Passwort zurücksetzen) auf Deutsch
+auth.languageCode = "de";
 // Offline-Persistenz: Daten werden in IndexedDB gecacht, offline gemachte
 // Änderungen überleben App-Neustarts und syncen automatisch beim Reconnect.
 // Fällt ohne IndexedDB (z.B. Private Mode) automatisch auf Memory-Cache zurück.

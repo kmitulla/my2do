@@ -1,21 +1,24 @@
 import React, { useState } from "react";
-import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC } from "@/lib/firebaseAuth";
+import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC, authErrorMessage } from "@/lib/firebaseAuth";
 import { deleteCategory } from "@/lib/todoService";
-import { updatePassword } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import ExportPanel from "./ExportPanel";
 import useConfirmReset from "@/hooks/useConfirmReset";
 
 export default function SettingsPanel({ categories, todos, onCategoryDeleted }) {
-  const { user, userProfile, logout, updateUserProfile } = useFirebaseAuth();
+  const { user, userProfile, logout, updateUserProfile, changePassword, resetPassword } = useFirebaseAuth();
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmCatDelete, setConfirmCatDelete] = useState(null);
   // Klick woanders → Bestätigungszustand zurücksetzen
   const logoutBtnRef = useConfirmReset(confirmLogout, () => setConfirmLogout(false));
   const catBtnRef = useConfirmReset(confirmCatDelete !== null, () => setConfirmCatDelete(null));
+  const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
-  const [pwMsg, setPwMsg] = useState("");
+  const [newPw2, setNewPw2] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  // { ok: bool, text: string }
+  const [pwMsg, setPwMsg] = useState(null);
   const [openaiKey, setOpenaiKey] = useState(userProfile?.openaiKey || "");
   const [aiEnabled, setAiEnabled] = useState(userProfile?.aiEnabled || false);
   const [aiSaved, setAiSaved] = useState(false);
@@ -33,13 +36,35 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
 
   const handleChangePw = async (e) => {
     e.preventDefault();
-    try {
-      await updatePassword(auth.currentUser, newPw);
-      setPwMsg("Passwort erfolgreich geändert!");
-      setNewPw("");
-    } catch (err) {
-      setPwMsg("Fehler: " + err.message);
+    if (newPw !== newPw2) {
+      setPwMsg({ ok: false, text: "Die neuen Passwörter stimmen nicht überein." });
+      return;
     }
+    setPwBusy(true);
+    setPwMsg(null);
+    try {
+      await changePassword(currentPw, newPw);
+      setPwMsg({ ok: true, text: "Passwort erfolgreich geändert!" });
+      setCurrentPw("");
+      setNewPw("");
+      setNewPw2("");
+    } catch (err) {
+      setPwMsg({ ok: false, text: authErrorMessage(err) });
+    }
+    setPwBusy(false);
+  };
+
+  // Aktuelles Passwort vergessen → Link zum Zurücksetzen an die eigene Adresse
+  const handleSendResetMail = async () => {
+    setPwBusy(true);
+    setPwMsg(null);
+    try {
+      await resetPassword(user.email);
+      setPwMsg({ ok: true, text: `Link zum Zurücksetzen an ${user.email} gesendet. Bitte auch den Spam-Ordner prüfen.` });
+    } catch (err) {
+      setPwMsg({ ok: false, text: authErrorMessage(err) });
+    }
+    setPwBusy(false);
   };
 
   const handleSaveAI = async () => {
@@ -132,13 +157,27 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
       {/* Password */}
       <div className="glass rounded-[24px] p-4">
         <h3 className="text-sm font-semibold text-slate-700 mb-2">Passwort ändern</h3>
-        <form onSubmit={handleChangePw} className="flex gap-2">
+        <form onSubmit={handleChangePw} className="space-y-2">
+          <input type="email" value={user?.email || ""} autoComplete="username" readOnly hidden />
+          <input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)}
+            placeholder="Aktuelles Passwort" required autoComplete="current-password"
+            className="w-full px-3 py-2 rounded-xl bg-white/80 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
           <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)}
-            placeholder="Neues Passwort (min. 6 Zeichen)" minLength={6} required
-            className="flex-1 px-3 py-2 rounded-xl bg-white/80 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
-          <button type="submit" className="px-3 py-2 rounded-xl bg-blue-500 text-white text-sm hover:bg-blue-600">OK</button>
+            placeholder="Neues Passwort (min. 6 Zeichen)" minLength={6} required autoComplete="new-password"
+            className="w-full px-3 py-2 rounded-xl bg-white/80 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
+          <input type="password" value={newPw2} onChange={(e) => setNewPw2(e.target.value)}
+            placeholder="Neues Passwort wiederholen" minLength={6} required autoComplete="new-password"
+            className="w-full px-3 py-2 rounded-xl bg-white/80 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50" />
+          <button type="submit" disabled={pwBusy}
+            className="w-full py-2 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all disabled:opacity-60">
+            {pwBusy ? "Bitte warten..." : "Passwort ändern"}
+          </button>
         </form>
-        {pwMsg && <p className={`text-xs mt-2 ${pwMsg.includes("Fehler") ? "text-red-500" : "text-emerald-600"}`}>{pwMsg}</p>}
+        <button type="button" onClick={handleSendResetMail} disabled={pwBusy}
+          className="w-full mt-2 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60">
+          Aktuelles Passwort vergessen? Link zum Zurücksetzen per E-Mail senden
+        </button>
+        {pwMsg && <p className={`text-xs mt-2 ${pwMsg.ok ? "text-emerald-600" : "text-red-500"}`}>{pwMsg.text}</p>}
       </div>
 
       {/* Categories */}

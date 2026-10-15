@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { updateTodo, deleteTodo, restoreTodo } from "@/lib/todoService";
 import useConfirmReset from "@/hooks/useConfirmReset";
+import FavoriteButton from "./FavoriteButton";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
 
@@ -425,6 +426,8 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
             )}
           </div>
         </div>
+
+        <FavoriteButton todo={todo} className="w-7 h-7 -mx-1 rounded-full" />
 
         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${
           todo.prio === "A" ? "bg-red-100 text-red-600" : todo.prio === "C" ? "bg-green-100 text-green-600" : "bg-amber-100 text-amber-600"
