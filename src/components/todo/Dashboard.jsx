@@ -16,6 +16,7 @@ import NotesPanel from "./NotesPanel";
 import SwipeableTodoCard from "./SwipeableTodoCard";
 import TodoDetailModal from "./TodoDetailModal";
 import SyncIndicator from "./SyncIndicator";
+import FavoritesBar from "./FavoritesBar";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
@@ -54,7 +55,7 @@ function applyWiedervorlageFilter(todos, wFilter) {
   });
 }
 
-const defaultFilters = { statuses: [], prios: [], categories: [], showArchived: false, wiedervorlageFilter: "" };
+const defaultFilters = { statuses: [], prios: [], categories: [], showArchived: false, wiedervorlageFilter: "", onlyFavorites: false };
 
 export default function Dashboard() {
   const { user, userProfile, isAdmin } = useFirebaseAuth();
@@ -127,6 +128,7 @@ export default function Dashboard() {
     } else {
       if (!filters.showArchived) result = result.filter((t) => !t.archived);
       else result = result.filter((t) => t.archived);
+      if (filters.onlyFavorites) result = result.filter((t) => t.favorite);
       if (filters.statuses?.length) result = result.filter((t) => filters.statuses.includes(t.status));
       if (filters.prios?.length) result = result.filter((t) => filters.prios.includes(t.prio));
       if (filters.categories?.length) result = result.filter((t) => {
@@ -291,6 +293,7 @@ export default function Dashboard() {
         <div className="mt-4 space-y-4">
           {activeTab === 0 && (
             <>
+              <FavoritesBar todos={todos} onOpen={openTodo} />
               <div className="glass rounded-[24px] p-3">
                 <QuickAdd categories={categories} onCreated={handleQuickCreated} aiEnabled={aiEnabled} />
               </div>

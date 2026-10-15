@@ -55,6 +55,14 @@ export const updateTodo = (uid, id, data) =>
 export const deleteTodo = (uid, id) =>
   fireWrite(deleteDoc(doc(db, "users", uid, "todos", id)), "deleteTodo");
 
+// Favorit an/aus. Bewusst ohne updatedAt: Markieren ist keine inhaltliche
+// Änderung. favoritedAt bestimmt die Reihenfolge in der Favoriten-Leiste.
+export const setTodoFavorite = (uid, id, favorite) =>
+  fireWrite(updateDoc(doc(db, "users", uid, "todos", id), {
+    favorite,
+    favoritedAt: favorite ? serverTimestamp() : null,
+  }), "setTodoFavorite");
+
 // Gelöschtes Todo unter gleicher ID wiederherstellen (Undo nach Swipe-Löschen)
 export const restoreTodo = (uid, id, data) =>
   fireWrite(setDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "restoreTodo");

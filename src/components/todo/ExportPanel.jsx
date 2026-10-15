@@ -102,6 +102,7 @@ function serializeTodo(t) {
     deadline: serialize(t.deadline),
     wiedervorlage: serialize(t.wiedervorlage),
     archived: !!t.archived,
+    favorite: !!t.favorite,
     createdAt: serialize(t.createdAt),
   };
 }
@@ -175,6 +176,8 @@ export default function ExportPanel({ todos, categories }) {
           deadline: t.deadline ? new Date(t.deadline) : null,
           wiedervorlage: t.wiedervorlage ? new Date(t.wiedervorlage) : null,
           archived: !!t.archived,
+          favorite: !!t.favorite,
+          favoritedAt: t.favorite ? new Date() : null,
         });
         todosImported++;
       }
