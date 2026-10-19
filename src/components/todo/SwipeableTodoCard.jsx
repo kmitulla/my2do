@@ -235,8 +235,13 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
       const newDate = addDays(step.days);
       const prevWiedervorlage = todo.wiedervorlage ?? null;
       setOffsetX(0);
+      if (!updateTodo(user.uid, todo.id, { wiedervorlage: newDate })) {
+        notifyLocked(todo);
+        lockedStage.current = -1;
+        dx.current = 0;
+        return;
+      }
       setShowBurst("wiedervorlage");
-      updateTodo(user.uid, todo.id, { wiedervorlage: newDate });
       onAction?.({
         label: `„${todo.title}" auf Wiedervorlage ${step.label} gesetzt`,
         undo: () => updateTodo(user.uid, todo.id, { wiedervorlage: prevWiedervorlage }),

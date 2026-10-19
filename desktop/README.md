@@ -10,12 +10,14 @@ denselben Konten und Daten.
 | --- | --- |
 | Panel ein-/ausfahren | `Strg + Alt + Leertaste` (einstellbar). Das Panel fährt auf dem Bildschirm aus, auf dem gerade die Maus ist. |
 | Neues 2do erfassen | `Strg + Alt + N` (einstellbar) |
-| Am Rand ausfahren | Maus an den rechten Bildschirmrand schieben |
+| Am Rand ausfahren | Maus rechts an den Bildschirmrand schieben – dort, wo die dezente Leiste (Griff) sitzt. Position und Länge des Griffs sind einstellbar, außerhalb davon passiert nichts. |
 | Automatisch einfahren | Panel bleibt, solange die Maus drin oder am Rand ist, und fährt danach nach 3 s wieder ein (einstellbar, ein dünner Balken zeigt den Countdown) |
 | Anheften | Pinnnadel oben oder `Strg + P` – dann fährt das Panel nicht automatisch ein |
 | Breite | Am linken Rand des Panels ziehen |
 | Im Panel | `Strg+N` neues 2do · `Strg+F` suchen · `Strg+1…6` Bereiche · `Strg+,` Einstellungen · `F1` alle Tastenkürzel · `Esc` einfahren |
 | Im 2do-Editor | `Strg+S` speichern · `Strg+Enter` speichern & schließen · `Esc` schließen (speichert) · `Strg+T` Zeitmarke |
+| Eigenes Fenster | Fenster-Symbol im 2do- oder Notiz-Editor: öffnet ein großes Windows-Fenster (2do zweispaltig). Größe und Position werden gemerkt, `Strg+W` schließt. |
+| Nicht doppelt bearbeiten | Ist ein 2do / eine Notiz schon in einem anderen Fenster oder auf einem anderen Gerät offen, wird es nur angezeigt – mit „Hier bearbeiten" übernimmt man es. |
 
 Über das Symbol im Infobereich der Taskleiste (rechts unten) gibt es
 Einstellungen, Autostart („Mit Windows starten") und „2Do beenden".

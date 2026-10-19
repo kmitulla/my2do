@@ -1,5 +1,6 @@
 import React from "react";
 import { lockedByOther } from "@/lib/todoService";
+import { auth } from "@/lib/firebase";
 import { toast } from "@/components/ui/use-toast";
 
 export function UsersIcon({ size = 12 }) {
@@ -26,20 +27,24 @@ export const memberNameList = (todo, ownUid) =>
 // Hinweis, wenn eine Schnellaktion (Swipe, Abhaken) an der Sperre scheitert
 export const notifyLocked = (todo) => {
   const lock = lockedByOther(todo);
+  const own = lock?.uid && lock.uid === auth.currentUser?.uid;
   toast({
     title: "Gerade gesperrt",
-    description: `${lock?.name || "Jemand"} bearbeitet „${todo.title || "dieses 2do"}" gerade. Versuch es gleich nochmal.`,
+    description: own
+      ? `„${todo.title || "Dieses 2do"}" ist gerade in einem anderen Fenster oder auf einem anderen Gerät geöffnet.`
+      : `${lock?.name || "Jemand"} bearbeitet „${todo.title || "dieses 2do"}" gerade. Versuch es gleich nochmal.`,
   });
 };
 
 // Kleines Abzeichen auf den Karten: geteilt (Anzahl Mitbearbeiter) bzw.
 // Schloss, solange jemand anderes das 2do bearbeitet
 export default function SharedBadge({ todo, className = "" }) {
-  if (!todo.sharedId) return null;
   const lock = lockedByOther(todo);
+  if (!todo.sharedId && !lock) return null;
+  const own = lock?.uid && lock.uid === auth.currentUser?.uid;
   const count = (todo.collaborators || []).length;
   const title = lock
-    ? `${lock.name || "Jemand"} bearbeitet gerade`
+    ? (own ? "In einem anderen Fenster oder auf einem anderen Gerät geöffnet" : `${lock.name || "Jemand"} bearbeitet gerade`)
     : `Geteilt mit ${(todo.collaborators || []).length} Personen: ${Object.values(todo.memberNames || {}).join(", ")}`;
   return (
     <span title={title}
@@ -47,7 +52,7 @@ export default function SharedBadge({ todo, className = "" }) {
         lock ? "bg-amber-100 text-amber-700" : "bg-sky-100/80 text-sky-600"
       } ${className}`}>
       {lock ? <LockIcon size={10} /> : <UsersIcon size={10} />}
-      {lock ? <span className="max-w-[70px] truncate">{lock.name}</span> : count}
+      {lock ? <span className="max-w-[70px] truncate">{own ? "offen" : lock.name}</span> : count}
     </span>
   );
 }

@@ -60,9 +60,11 @@ export const addTodo = (uid, data) => {
 export const updateTodo = (uid, id, data, { personalOnly = false } = {}) => {
   const shared = sharedCache.get(id);
   if (!shared) {
+    // In einem anderen Fenster / auf einem anderen Gerät geöffnet → nicht dazwischenfunken
+    if (lockedByOther({ editLock: ownLocks.get(id) })) return false;
     // undefined lehnt Firestore synchron ab (z. B. createdAt eines gerade
     // erst angelegten 2dos, das noch nicht vom Server zurückkam)
-    const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+    const clean = Object.fromEntries(Object.entries(data).filter(([k, v]) => v !== undefined && k !== "editLock"));
     fireWrite(updateDoc(doc(db, "users", uid, "todos", id), { ...clean, updatedAt: serverTimestamp() }), "updateTodo");
     return true;
   }
@@ -104,7 +106,8 @@ export const restoreTodo = (uid, id, data) => {
     fireWrite(batch.commit(), "restoreTodo (geteilt)");
     return;
   }
-  fireWrite(setDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "restoreTodo");
+  const { editLock: _lock, ...rest } = data;
+  fireWrite(setDoc(doc(db, "users", uid, "todos", id), { ...rest, updatedAt: serverTimestamp() }), "restoreTodo");
 };
 
 export const addCategory = (uid, name, color) => {
@@ -143,6 +146,8 @@ export const subscribeTodos = (uid, callback, onPending) => {
   const unsubOwn = onSnapshot(query(todosCol(uid), orderBy("createdAt", "desc")), snapOpts, (snap) => {
     reportPending("todos", snap.metadata.hasPendingWrites);
     own = snap.docs.map((d) => ({ id: d.id, ...docData(d) }));
+    ownLocks.clear();
+    own.forEach((t) => { if (t.editLock) ownLocks.set(t.id, t.editLock); });
     emit();
   });
 
@@ -173,6 +178,7 @@ export const subscribeTodos = (uid, callback, onPending) => {
     reportPending("todos", false);
     reportPending("sharedTodos", false);
     sharedCache.clear();
+    ownLocks.clear();
     unsubOwn();
     unsubShared();
   };
@@ -204,6 +210,7 @@ const SHARED_VERSION = 2;
 export const PERSONAL_FIELDS = ["tags", "category", "wiedervorlage", "favorite", "favoritedAt"];
 // Verwaltungsfelder, die nie als gemeinsamer Inhalt geschrieben werden
 const META_FIELDS = new Set([
+  "lockedBy",
   "id", "userId", "createdAt", "updatedAt", "updatedBy", "sharedId", "shared",
   "sharedBy", "sharedByName", "collaborators", "targetUids", "memberNames",
   "isCollaborative", "editLock", "v", "originalId", "sharedFromId",
@@ -211,6 +218,8 @@ const META_FIELDS = new Set([
 
 // Aktuell sichtbare geteilte 2dos (id → Daten), gepflegt von subscribeTodos
 const sharedCache = new Map();
+// Sperren der eigenen (privaten) 2dos (id → editLock), gepflegt von subscribeTodos
+const ownLocks = new Map();
 export const isSharedTodo = (id) => sharedCache.has(id);
 
 // Aufteilen in persönliche und gemeinsame Felder (Verwaltungsfelder fallen weg)
@@ -323,18 +332,27 @@ export const leaveSharedTodo = (uid, id) => {
   fireWrite(batch.commit(), "leaveSharedTodo");
 };
 
-export const subscribeSharedTodo = (id, callback) =>
-  onSnapshot(doc(db, "sharedTodos", id), snapOpts, (snap) => {
+// Einzelnes Dokument live beobachten; segments z. B. ["sharedTodos", id]
+export const subscribeDocLive = (segments, callback) =>
+  onSnapshot(doc(db, ...segments), snapOpts, (snap) => {
     callback(snap.exists() ? { id: snap.id, ...docData(snap) } : null);
   }, (err) => {
-    console.error("Geteiltes 2do laden fehlgeschlagen:", err);
+    console.error("Dokument laden fehlgeschlagen:", segments.join("/"), err);
     callback(null);
   });
 
-// --- BEARBEITUNGSSPERRE (geteilte 2dos) ---
-// Es kann immer nur eine Person (bzw. ein Fenster) ein geteiltes 2do
-// bearbeiten. Die Sperre wird per Heartbeat erneuert und verfällt automatisch,
-// falls ein Gerät abstürzt oder offline geht.
+// Dokument, das die Bearbeitungssperre eines 2dos trägt
+export const todoLockPath = (uid, todo) =>
+  todo.sharedId ? ["sharedTodos", todo.sharedId] : ["users", uid, "todos", todo.id];
+
+export const pageLockPath = (uid, bookId, sectionId, pageId) =>
+  ["users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId];
+
+// --- BEARBEITUNGSSPERRE (2dos & Notizseiten) ---
+// Ein 2do bzw. eine Notizseite kann immer nur in einem Editor bearbeitet
+// werden – egal ob von einer anderen Person (geteilte 2dos), in einem zweiten
+// Fenster oder auf einem anderen Gerät. Die Sperre wird per Heartbeat erneuert
+// und verfällt automatisch, falls ein Gerät abstürzt oder offline geht.
 export const LOCK_TTL_MS = 90 * 1000;
 export const LOCK_HEARTBEAT_MS = 25 * 1000;
 // Eindeutig pro Tab/Fenster, damit auch zwei Geräte desselben Users sich sperren
@@ -364,31 +382,33 @@ const withTimeout = (promise, ms = 6000) =>
     new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
   ]);
 
-// { ok: true } | { ok: false, lock } | wirft offline/bei Fehlern
-export const acquireEditLock = (id, uid, name) =>
+// { ok: true } | { ok: false, lock } | wirft offline/bei Fehlern.
+// force: eigene Sperre aus einem anderen Fenster/Gerät übernehmen (nie die
+// einer anderen Person)
+export const acquireEditLock = (segments, uid, name, { force = false } = {}) =>
   withTimeout(runTransaction(db, async (tx) => {
-    const ref = doc(db, "sharedTodos", id);
+    const ref = doc(db, ...segments);
     const snap = await tx.get(ref);
     if (!snap.exists()) return { ok: false, lock: null };
     const other = lockedByOther(snap.data());
-    if (other) return { ok: false, lock: other };
+    if (other && !(force && other.uid === uid)) return { ok: false, lock: other };
     tx.update(ref, { editLock: { uid, name, session: SESSION_ID, at: serverTimestamp() } });
     return { ok: true };
   }));
 
 // Heartbeat: true = Sperre gehalten, false = verloren
-export const refreshEditLock = (id) =>
+export const refreshEditLock = (segments) =>
   withTimeout(runTransaction(db, async (tx) => {
-    const ref = doc(db, "sharedTodos", id);
+    const ref = doc(db, ...segments);
     const snap = await tx.get(ref);
     if (!snap.exists() || snap.data().editLock?.session !== SESSION_ID) return false;
     tx.update(ref, { "editLock.at": serverTimestamp() });
     return true;
   }));
 
-export const releaseEditLock = (id) =>
+export const releaseEditLock = (segments) =>
   withTimeout(runTransaction(db, async (tx) => {
-    const ref = doc(db, "sharedTodos", id);
+    const ref = doc(db, ...segments);
     const snap = await tx.get(ref);
     if (snap.exists() && snap.data().editLock?.session === SESSION_ID) {
       tx.update(ref, { editLock: null });
@@ -490,6 +510,18 @@ export const getAllNotebookData = async (uid) => {
   return books;
 };
 
+// Namen von Notizbuch + Abschnitt (Kopfzeile im eigenen Notiz-Fenster)
+export const getNoteBreadcrumb = async (uid, bookId, sectionId) => {
+  const [book, section] = await Promise.all([
+    getDoc(doc(db, "users", uid, "notebooks", bookId)).catch(() => null),
+    getDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId)).catch(() => null),
+  ]);
+  return {
+    bookName: book?.exists() ? book.data().name : "",
+    sectionName: section?.exists() ? section.data().name : "",
+  };
+};
+
 // --- NOTES TREE STATE (expanded nodes, synced per user) ---
 export const notesTreeStateDoc = (uid) => doc(db, "users", uid, "settings", "notesTreeState");
 
@@ -505,7 +537,7 @@ export const getNotesTreeState = async (uid) => {
 export const copyPage = async (uid, fromBookId, fromSectionId, pageId, toBookId, toSectionId) => {
   const srcDoc = await getDoc(doc(db, "users", uid, "notebooks", fromBookId, "sections", fromSectionId, "pages", pageId));
   if (!srcDoc.exists()) return;
-  const data = srcDoc.data();
+  const { editLock: _lock, ...data } = srcDoc.data();
   await addDoc(pagesCol(uid, toBookId, toSectionId), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
 };
 
@@ -523,7 +555,7 @@ export const copySection = async (uid, fromBookId, sectionId, toBookId, parentSe
   const newRef = await addDoc(sectionsCol(uid, toBookId), { ...data, parentSectionId, createdAt: serverTimestamp() });
   const pagesSnap = await getDocs(pagesCol(uid, fromBookId, sectionId));
   for (const p of pagesSnap.docs) {
-    const pd = p.data();
+    const { editLock: _lock, ...pd } = p.data();
     await addDoc(pagesCol(uid, toBookId, newRef.id), { ...pd, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   }
 };

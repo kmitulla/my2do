@@ -1,6 +1,27 @@
 // Desktop-Hülle (Electron, siehe desktop/preload.js). Im Browser undefined.
 export const desktop = typeof window !== "undefined" ? window.my2doDesktop : undefined;
 export const isDesktop = !!desktop;
+// "panel" = ausfahrbare Seitenleiste, "detached" = eigenes 2do-/Notiz-Fenster,
+// null = Browser
+export const windowKind = desktop?.windowKind || null;
+
+// 2do / Notiz in einem eigenen Fenster öffnen: in der Desktop-App als
+// Windows-Fenster, im Browser als Popup-Fenster
+export function openInWindow(route, kind, title) {
+  if (desktop?.openWindow) {
+    desktop.openWindow({ route, kind, title });
+    return;
+  }
+  const url = `${window.location.origin}${window.location.pathname}#${route}`;
+  const width = kind === "note" ? 980 : 1100;
+  window.open(url, `my2do-${route.replace(/\W+/g, "-")}`, `popup=yes,width=${width},height=780`);
+}
+
+// Eigene Fenster nur mit Maus und genug Platz (nicht auf dem Handy) –
+// und nicht aus einem Fenster heraus
+export const canOpenWindows = () =>
+  windowKind === "panel" ||
+  (!desktop && typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 900px) and (pointer: fine)").matches);
 
 // Befehle an die App (Tastenkürzel, Tray, Erinnerungen) – Dashboard & Co.
 // hören auf "my2do:command"

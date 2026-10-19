@@ -5,14 +5,16 @@
 //  transparenten Fenster am rechten Bildschirmrand:
 //   • Tastenkürzel (einstellbar) fährt das Panel auf dem Bildschirm aus, auf
 //     dem gerade der Mauszeiger ist – nochmal drücken fährt es wieder ein
-//   • Maus an den rechten Rand → Panel fährt aus
+//   • Maus an den rechten Rand (im Bereich des dezenten Griffs) → Panel
+//     fährt aus
 //   • Panel bleibt, solange die Maus drin/drauf ist; danach fährt es nach
 //     einstellbarer Zeit (Standard 3 s) wieder ein – außer es ist angeheftet
+//   • 2dos und Notizen lassen sich zusätzlich in eigenen Fenstern öffnen
 // ════════════════════════════════════════════════════════════════════════════
 "use strict";
 
 const {
-  app, BrowserWindow, globalShortcut, screen, Tray, Menu, ipcMain,
+  app, BaseWindow, BrowserWindow, globalShortcut, screen, Tray, Menu, ipcMain,
   nativeImage, shell, protocol, session, Notification,
 } = require("electron");
 const path = require("node:path");
@@ -32,6 +34,11 @@ const MAX_WIDTH = 900;
 const FRAME_LEFT = 18;
 const FRAME_RIGHT = 10;
 const FRAME_GAP = FRAME_LEFT + FRAME_RIGHT;
+// Griff am Rand: schmale Leiste, Auslöse-Zone ragt etwas darüber hinaus
+const HANDLE_W = 4;
+const HANDLE_W_HOT = 6;
+const HANDLE_TOLERANCE = 48;   // "grob im Bereich": so viel ober-/unterhalb zählt mit
+const HANDLE_NEAR_PX = 90;     // ab dieser Nähe zum Rand leuchtet der Griff auf
 
 const DEFAULTS = {
   toggleShortcut: "Control+Alt+Space",
@@ -40,6 +47,9 @@ const DEFAULTS = {
   edgeReveal: true,
   edgeAllDisplays: false,
   edgeDelayMs: 250,
+  edgeHandle: true,     // dezenten Griff am Rand zeigen
+  handlePos: 50,        // Mitte des Griffs in % der Bildschirmhöhe
+  handleSize: 34,       // Länge des Griffs in % der Bildschirmhöhe
   width: 460,
   pinned: false,
   autostart: false,
@@ -64,6 +74,10 @@ let edgeSince = 0;
 let leaveTimer = null;
 let holdCount = 0;          // > 0: nicht automatisch einfahren (Dialoge, Resize …)
 let holdUntilFocus = false; // Datei-Dialog offen
+// Selbst eingefahren (Knopf, Esc, Tastenkürzel, eigenes Fenster): nicht sofort
+// wieder ausfahren, nur weil die Maus noch im Panel bzw. am Rand steht
+let hideReason = null;      // "auto" | "manual"
+let edgeArmed = true;       // Rand-Auslöser erst wieder scharf, wenn die Maus den Rand verlassen hat
 
 // ── Einstellungen ───────────────────────────────────────────────────────────
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
@@ -92,6 +106,8 @@ function sanitize(s) {
     ...s,
     autoHideSec: clamp(Number(s.autoHideSec) || DEFAULTS.autoHideSec, 1, 30),
     edgeDelayMs: clamp(Number(s.edgeDelayMs) || 0, 0, 2000),
+    handlePos: clamp(Number(s.handlePos) || DEFAULTS.handlePos, 10, 90),
+    handleSize: clamp(Number(s.handleSize) || DEFAULTS.handleSize, 12, 80),
     width: clamp(Math.round(Number(s.width) || DEFAULTS.width), MIN_WIDTH, MAX_WIDTH),
     toggleShortcut: typeof s.toggleShortcut === "string" ? s.toggleShortcut : DEFAULTS.toggleShortcut,
     quickAddShortcut: typeof s.quickAddShortcut === "string" ? s.quickAddShortcut : DEFAULTS.quickAddShortcut,
@@ -155,6 +171,23 @@ function registerAppProtocol() {
 }
 
 // ── Fenster ─────────────────────────────────────────────────────────────────
+// Links (E-Mail, Web) im Standardprogramm öffnen, nie in der App
+function guardNavigation(wc) {
+  const openExternal = (url) => {
+    if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
+  };
+  wc.setWindowOpenHandler(({ url }) => {
+    openExternal(url);
+    return { action: "deny" };
+  });
+  wc.on("will-navigate", (e, url) => {
+    if (!url.startsWith("app://")) {
+      e.preventDefault();
+      openExternal(url);
+    }
+  });
+}
+
 const send = (channel, data) => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, data);
 };
@@ -203,21 +236,7 @@ function createWindow() {
   });
   win.setAlwaysOnTop(true, "pop-up-menu");
   win.loadURL("app://my2do/index.html");
-
-  // Links (E-Mail, Web) im Standardprogramm öffnen, nie im Panel
-  const openExternal = (url) => {
-    if (/^(https?|mailto):/i.test(url)) shell.openExternal(url);
-  };
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    openExternal(url);
-    return { action: "deny" };
-  });
-  win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith("app://")) {
-      e.preventDefault();
-      openExternal(url);
-    }
-  });
+  guardNavigation(win.webContents);
 
   // Schließen (Alt+F4) fährt nur ein – beendet wird über das Tray-Menü
   win.on("close", (e) => {
@@ -253,7 +272,7 @@ function armLeaveTimer() {
   const ms = settings.autoHideSec * 1000;
   leaveTimer = setTimeout(() => {
     leaveTimer = null;
-    hidePanel();
+    hidePanel("auto");
   }, ms);
   send("panel:leaving", ms);
 }
@@ -272,6 +291,7 @@ function showPanel(display, by, { focus = false } = {}) {
   win.setBounds(boundsFor(display));
   entered = false;
   state = "showing";
+  syncHandles();
   if (focus) {
     win.show();
     win.focus();
@@ -283,9 +303,11 @@ function showPanel(display, by, { focus = false } = {}) {
   stateTimer = setTimeout(() => { if (state === "showing") state = "shown"; }, ANIM_MS);
 }
 
-function hidePanel() {
+function hidePanel(reason = "manual") {
   if (state === "hidden" || state === "hiding") return;
   clearLeaveTimer();
+  hideReason = reason;
+  if (reason === "manual") edgeArmed = false;
   state = "hiding";
   send("panel:state", { visible: false });
   clearTimeout(stateTimer);
@@ -293,6 +315,7 @@ function hidePanel() {
     if (state !== "hiding") return;
     state = "hidden";
     win.hide();
+    syncHandles();
   }, ANIM_MS + 40);
 }
 
@@ -322,9 +345,17 @@ function poll() {
   if (state === "hidden") {
     if (!settings.edgeReveal) return;
     const d = screen.getDisplayNearestPoint(p);
-    const onEdge = p.x >= d.bounds.x + d.bounds.width - EDGE_PX
-      && p.y >= d.workArea.y && p.y < d.workArea.y + d.workArea.height;
-    if (onEdge && (settings.edgeAllDisplays || d.id === activeDisplayId)) {
+    const allowed = settings.edgeAllDisplays || d.id === activeDisplayId;
+    const range = handleRange(d);
+    const inRange = p.y >= range.top - HANDLE_TOLERANCE && p.y <= range.bottom + HANDLE_TOLERANCE;
+    const right = d.bounds.x + d.bounds.width;
+    setHandlesHot(allowed && inRange && p.x >= right - HANDLE_NEAR_PX ? d.id : null);
+    const onEdge = p.x >= right - EDGE_PX && inRange;
+    if (!edgeArmed) {
+      if (p.x < right - EDGE_PX) edgeArmed = true;
+      return;
+    }
+    if (onEdge && allowed) {
       if (!edgeSince) edgeSince = Date.now();
       if (Date.now() - edgeSince >= settings.edgeDelayMs) {
         edgeSince = 0;
@@ -338,8 +369,8 @@ function poll() {
 
   const inside = inHoverZone(p);
   if (state === "hiding") {
-    // Maus kommt während des Einfahrens zurück → wieder raus
-    if (inside) showPanel(activeDisplay(), "edge");
+    // Maus kommt während des automatischen Einfahrens zurück → wieder raus
+    if (inside && hideReason === "auto") showPanel(activeDisplay(), "edge");
     return;
   }
   if (inside) {
@@ -348,6 +379,142 @@ function poll() {
   } else if (!settings.pinned && holdCount === 0 && !holdUntilFocus && (entered || openedBy === "edge")) {
     armLeaveTimer();
   }
+}
+
+// ── Griff am Bildschirmrand ─────────────────────────────────────────────────
+// Ein natives Fenster ohne Webinhalt (BaseWindow): kein eigener Renderer-
+// Prozess, praktisch kein RAM. Klick-durchlässig, damit z. B. Scrollbalken
+// darunter bedienbar bleiben.
+const handles = new Map();  // displayId → BaseWindow
+let hotDisplayId = null;
+
+function handleRange(display) {
+  const wa = display.workArea;
+  const len = Math.round(clamp(wa.height * settings.handleSize / 100, 120, wa.height - 40));
+  const center = wa.y + wa.height * settings.handlePos / 100;
+  const top = Math.round(clamp(center - len / 2, wa.y + 12, wa.y + wa.height - len - 12));
+  return { top, bottom: top + len };
+}
+
+function handleBounds(display, hot) {
+  const { top, bottom } = handleRange(display);
+  const w = hot ? HANDLE_W_HOT : HANDLE_W;
+  return { x: display.bounds.x + display.bounds.width - w, y: top, width: w, height: bottom - top };
+}
+
+function styleHandle(h, hot) {
+  h.setBackgroundColor(hot ? "#6366f1" : "#818cf8");
+  h.setOpacity(hot ? 0.95 : 0.5);
+}
+
+function createHandle(display) {
+  const h = new BaseWindow({
+    ...handleBounds(display, false),
+    show: false, frame: false, resizable: false, movable: false, minimizable: false,
+    maximizable: false, fullscreenable: false, skipTaskbar: true, focusable: false,
+    alwaysOnTop: true, hasShadow: false, thickFrame: false, title: "2Do",
+    backgroundColor: "#818cf8",
+  });
+  h.setIgnoreMouseEvents(true);
+  h.setAlwaysOnTop(true, "pop-up-menu");
+  styleHandle(h, false);
+  return h;
+}
+
+// Griffe nur zeigen, solange das Panel eingefahren ist
+function syncHandles() {
+  if (state !== "hidden") hotDisplayId = null;
+  const wanted = new Map();
+  if (state === "hidden" && settings.edgeReveal && settings.edgeHandle) {
+    const displays = settings.edgeAllDisplays ? screen.getAllDisplays() : [activeDisplay()];
+    displays.forEach((d) => wanted.set(d.id, d));
+  }
+  for (const [id, h] of handles) {
+    if (!wanted.has(id)) {
+      if (!h.isDestroyed()) h.destroy();
+      handles.delete(id);
+    }
+  }
+  for (const [id, d] of wanted) {
+    let h = handles.get(id);
+    if (!h || h.isDestroyed()) {
+      h = createHandle(d);
+      handles.set(id, h);
+    }
+    styleHandle(h, id === hotDisplayId);
+    h.setBounds(handleBounds(d, id === hotDisplayId));
+    if (!h.isVisible()) h.showInactive();
+  }
+}
+
+function setHandlesHot(displayId) {
+  if (displayId === hotDisplayId) return;
+  hotDisplayId = displayId;
+  for (const [id, h] of handles) {
+    if (h.isDestroyed()) continue;
+    const d = screen.getAllDisplays().find((x) => x.id === id);
+    if (!d) continue;
+    styleHandle(h, id === displayId);
+    h.setBounds(handleBounds(d, id === displayId));
+  }
+}
+
+// ── Eigene Fenster für 2dos & Notizen ───────────────────────────────────────
+const detached = new Map();  // Route → BrowserWindow
+
+// Mica-Hintergrund gibt es ab Windows 11 22H2 (Build 22621)
+const supportsMica = () =>
+  process.platform === "win32" && Number((process.getSystemVersion() || "").split(".")[2] || 0) >= 22621;
+
+function openDetached({ route, kind, title }) {
+  if (typeof route !== "string" || !/^\/(todo|note)\/[\w/-]+$/.test(route)) return;
+  const existing = detached.get(route);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return;
+  }
+  const mica = supportsMica();
+  const saved = settings.windowBounds?.[kind];
+  const onScreen = saved && screen.getAllDisplays().some((d) =>
+    saved.x >= d.workArea.x - 50 && saved.y >= d.workArea.y - 50 &&
+    saved.x < d.workArea.x + d.workArea.width - 100 && saved.y < d.workArea.y + d.workArea.height - 100);
+  const w = new BrowserWindow({
+    width: saved?.width || (kind === "note" ? 980 : 1100),
+    height: saved?.height || 780,
+    ...(onScreen ? { x: saved.x, y: saved.y } : {}),
+    minWidth: 520,
+    minHeight: 420,
+    show: false,
+    title: title || "2Do",
+    icon: path.join(ASSETS, "icon.png"),
+    backgroundColor: mica ? "#00000000" : "#eef2ff",
+    ...(mica ? { backgroundMaterial: "mica" } : {}),
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#00000000", symbolColor: "#334155", height: 44 },
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: true,
+      additionalArguments: ["--my2do-window=detached", ...(mica ? ["--my2do-mica"] : [])],
+    },
+  });
+  guardNavigation(w.webContents);
+  w.loadURL(`app://my2do/index.html#${route}`);
+  w.once("ready-to-show", () => { w.show(); w.focus(); });
+  w.on("close", () => {
+    if (w.isMaximized() || w.isMinimized()) return;
+    settings.windowBounds = { ...(settings.windowBounds || {}), [kind]: w.getBounds() };
+    saveSettings();
+  });
+  w.on("closed", () => detached.delete(route));
+  detached.set(route, w);
+  // Man arbeitet jetzt im Fenster weiter → Panel einfahren
+  if (!settings.pinned) hidePanel();
 }
 
 // ── Tastenkürzel ────────────────────────────────────────────────────────────
@@ -389,6 +556,7 @@ function updateTrayMenu() {
     { type: "separator" },
     { label: "Angeheftet (nicht automatisch einfahren)", type: "checkbox", checked: settings.pinned, click: (i) => applyPatch({ pinned: i.checked }) },
     { label: "Am rechten Bildschirmrand ausfahren", type: "checkbox", checked: settings.edgeReveal, click: (i) => applyPatch({ edgeReveal: i.checked }) },
+    { label: "Griff am Rand zeigen", type: "checkbox", checked: settings.edgeHandle, enabled: settings.edgeReveal, click: (i) => applyPatch({ edgeHandle: i.checked }) },
     { label: "Mit Windows starten", type: "checkbox", checked: settings.autostart, click: (i) => applyPatch({ autostart: i.checked }) },
     { type: "separator" },
     { label: "Einstellungen …", click: () => openCommand("settings") },
@@ -488,6 +656,7 @@ function applyPatch(patch) {
   if ("autostart" in patch) applyAutostart();
   if ("pinned" in patch && settings.pinned) clearLeaveTimer();
   if ("width" in patch && isOpen()) win.setBounds(boundsFor(activeDisplay()));
+  if (["edgeReveal", "edgeHandle", "edgeAllDisplays", "handlePos", "handleSize"].some((k) => k in patch)) syncHandles();
 
   saveSettings();
   broadcastSettings();
@@ -498,6 +667,7 @@ ipcMain.handle("settings:get", () => publicSettings());
 ipcMain.handle("settings:set", (_e, patch) => applyPatch(patch || {}));
 ipcMain.handle("panel:get-state", () => ({ visible: isOpen() }));
 ipcMain.handle("app:info", () => ({ version: app.getVersion(), portable: !!process.env.PORTABLE_EXECUTABLE_FILE }));
+ipcMain.handle("window:open", (_e, opts) => openDetached(opts || {}));
 
 ipcMain.on("panel:hide", () => hidePanel());
 ipcMain.on("panel:hold", (_e, on) => { holdCount = Math.max(0, holdCount + (on ? 1 : -1)); if (on) clearLeaveTimer(); });
@@ -570,12 +740,14 @@ if (!app.requestSingleInstanceLock()) {
     const refit = () => {
       if (!screen.getAllDisplays().some((d) => d.id === activeDisplayId)) activeDisplayId = screen.getPrimaryDisplay().id;
       if (isOpen()) win.setBounds(boundsFor(activeDisplay()));
+      syncHandles();
     };
     screen.on("display-removed", refit);
     screen.on("display-added", refit);
     screen.on("display-metrics-changed", refit);
 
     const startHidden = process.argv.includes("--hidden");
+    syncHandles();
     win.webContents.once("did-finish-load", () => {
       if (!startHidden) showPanel(cursorDisplay(), "shortcut", { focus: true });
       if (!settings.firstRunDone) {

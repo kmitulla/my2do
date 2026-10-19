@@ -28,9 +28,14 @@ const IconCheck = () => (
     <polyline points="20 6 9 17 4 12"/>
   </svg>
 );
-const IconPlus = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+const IconPlus = ({ size = 18, className = "" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={className}>
     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
+const IconEdit = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
   </svg>
 );
 
@@ -79,6 +84,16 @@ export default function QuickAdd({ categories, onCreated }) {
   const [dragOver, setDragOver] = useState(false);
   const [emailParsed, setEmailParsed] = useState(null);
   const inputRef = useRef(null);
+  const rootRef = useRef(null);
+  const [expanded, setExpanded] = useState(false);
+
+  // Optionen wieder einklappen, wenn außerhalb geklickt wird (und nichts gewählt ist)
+  useEffect(() => {
+    if (!expanded) return;
+    const onDown = (e) => { if (!rootRef.current?.contains(e.target)) setExpanded(false); };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [expanded]);
 
   // Desktop-App: Strg+N / globales Tastenkürzel springt direkt hierher
   useEffect(() => {
@@ -197,10 +212,12 @@ export default function QuickAdd({ categories, onCreated }) {
   };
 
   const hasText = title.trim().length > 0;
+  // Optionen (Prio, Tags, Wiedervorlage) erst zeigen, wenn man erfasst
+  const showOptions = expanded || hasText || tags.length > 0 || !!wiedervorlage || prio !== "B" || dragOver;
 
   return (
     <div
-      className="space-y-2.5"
+      ref={rootRef}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -219,141 +236,139 @@ export default function QuickAdd({ categories, onCreated }) {
         />
       )}
 
-      {/* Input row */}
+      {/* Eingabezeile */}
       <div
-        className="flex gap-2 items-center relative rounded-xl transition-all"
+        className="flex gap-1.5 items-center relative rounded-[16px] transition-all"
         style={dragOver ? { boxShadow: "0 0 0 2px #6366f1, 0 0 20px rgba(99,102,241,0.25)" } : {}}
       >
         {dragOver && (
-          <div className="absolute inset-0 rounded-xl bg-indigo-50/80 border-2 border-dashed border-indigo-400 flex items-center justify-center z-10 pointer-events-none">
-            <span className="text-indigo-500 text-xs font-semibold">📧 E-Mail als Notiz ablegen</span>
+          <div className="absolute inset-0 rounded-[16px] bg-indigo-50/90 border-2 border-dashed border-indigo-400 flex items-center justify-center z-10 pointer-events-none">
+            <span className="text-indigo-500 text-xs font-semibold">📧 E-Mail hier ablegen</span>
           </div>
         )}
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
+          <IconPlus className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" size={16} />
           <input
             ref={inputRef}
             value={title}
             onChange={handleChange}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickSave()}
-            placeholder="Neue Aufgabe hinzufügen…"
-            className="w-full px-3 py-2.5 rounded-[18px] glass-input text-slate-800 placeholder-slate-400 text-[16px]"
+            onFocus={() => setExpanded(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSubmit();
+              else if (e.key === "Enter") handleQuickSave();
+              else if (e.key === "Escape" && !hasText) { setExpanded(false); e.currentTarget.blur(); }
+            }}
+            placeholder="Neue Aufgabe …"
+            className="w-full h-11 pl-9 pr-3 rounded-[15px] glass-input text-slate-800 placeholder-slate-400 text-[16px]"
           />
         </div>
 
-        {/* Quick save (no popup) */}
+        {/* Schnell speichern (ohne Editor) */}
         <button
           type="button"
           onClick={handleQuickSave}
           disabled={!hasText || loading}
-          title="Schnell speichern"
-          className="w-10 h-10 rounded-xl text-white flex items-center justify-center active:scale-90 transition-all"
-          style={{
-            background: hasText ? "linear-gradient(135deg, #10b981, #059669)" : "rgba(148,163,184,0.5)",
-            boxShadow: hasText ? "0 0 16px rgba(16,185,129,0.5)" : "none",
-            transition: "all 0.3s ease",
-          }}
+          title="Speichern (Enter)"
+          className={`w-11 h-11 rounded-[14px] flex items-center justify-center active:scale-90 transition-all flex-shrink-0 ${
+            hasText ? "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-500/30" : "bg-slate-200/70 text-slate-400"
+          }`}
         >
           {loading ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> : <IconCheck />}
         </button>
 
-        {/* + Button: save + open popup */}
+        {/* Speichern + Editor öffnen */}
         <button
           type="button"
           onClick={handleSubmit}
           disabled={!hasText || loading}
-          title="Speichern & bearbeiten"
-          className="w-10 h-10 rounded-xl text-white flex items-center justify-center active:scale-90 transition-all relative"
-          style={{
-            background: hasText ? "linear-gradient(135deg, #6366f1, #818cf8)" : "rgba(148,163,184,0.5)",
-            boxShadow: hasText ? "0 0 20px rgba(99,102,241,0.6), 0 4px 12px rgba(99,102,241,0.3)" : "none",
-            transition: "all 0.3s ease",
-          }}
+          title="Speichern & bearbeiten (Strg+Enter)"
+          className={`w-11 h-11 rounded-[14px] flex items-center justify-center active:scale-90 transition-all flex-shrink-0 ${
+            hasText ? "bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-500/30" : "bg-slate-200/70 text-slate-400"
+          }`}
         >
-          {loading ? (
-            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-          ) : (
-            <IconPlus />
-          )}
+          <IconEdit />
         </button>
       </div>
 
-      {/* Prio + category */}
-      <div className="flex gap-2 flex-wrap items-center">
-        {PRIOS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setPrio(p)}
-            title={`Priorität ${p}`}
-            className={`w-9 h-9 rounded-full text-sm font-bold border-2 flex items-center justify-center transition-all active:scale-90 ${
-              prio === p ? `${PRIO_BASE[p].active} scale-110` : PRIO_BASE[p].base
-            }`}
-          >
-            {p}
-          </button>
-        ))}
+      {/* Optionen – klappen beim Erfassen auf */}
+      <div className={`grid transition-all duration-200 ease-out ${showOptions ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="overflow-hidden">
+          <div className="pt-2.5 space-y-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {/* Prio: rund */}
+              <div className="flex gap-1 flex-shrink-0">
+                {PRIOS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPrio(p)}
+                    title={`Priorität ${p}`}
+                    className={`w-8 h-8 rounded-full text-[13px] font-bold border-2 flex items-center justify-center transition-all active:scale-90 ${
+                      prio === p ? PRIO_BASE[p].active : PRIO_BASE[p].base
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              {categories.length > 0 && <div className="w-px h-6 bg-slate-200 flex-shrink-0" />}
+              {/* Tags: eckig, eine scrollbare Zeile */}
+              {categories.length > 0 && (
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar fade-x min-w-0 py-0.5 px-0.5">
+                  {[...categories].sort((a, b) => Number(tags.includes(b.name)) - Number(tags.includes(a.name))).map((c) => {
+                    const active = tags.includes(c.name);
+                    return (
+                      <button key={c.id} type="button"
+                        onClick={() => setTags(active ? tags.filter((t) => t !== c.name) : [...tags, c.name])}
+                        className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap ${
+                          active ? "bg-indigo-500 text-white border-indigo-500 shadow-sm shadow-indigo-500/25" : "glass-chip text-slate-600 border-transparent"
+                        }`}>
+                        {active && "✓ "}#{c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-        {/* Trenner: Prio (rund) vs. Tags (eckig) */}
-        {categories.length > 0 && <div className="w-px h-6 bg-slate-300 mx-1" />}
-
-        {categories.length > 0 && categories.map((c) => {
-          const active = tags.includes(c.name);
-          return (
-            <button key={c.id} type="button"
-              onClick={() => setTags(active ? tags.filter((t) => t !== c.name) : [...tags, c.name])}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                active ? "bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-500/25" : "glass-chip text-slate-600 border-transparent"
-              }`}>
-              {active && "✓ "}#{c.name}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Wiedervorlage quick buttons */}
-      <div>
-        <div className="flex gap-1 flex-wrap items-center">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" className="mr-0.5">
-            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/>
-          </svg>
-          {WIEDERVORLAGE_DAYS.map((n) => {
-            const isActive = wiedervorlage && (() => {
-              const target = addDaysFromNow(n);
-              return Math.abs(wiedervorlage.getTime() - target.getTime()) < 60 * 60 * 1000;
-            })();
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => {
-                  const newDate = addDaysFromNow(n);
-                  setWiedervorlage(isActive ? null : newDate);
-                }}
-                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all active:scale-95 ${
-                  isActive
-                    ? "bg-indigo-500 text-white"
-                    : "glass-chip text-slate-500 hover:text-indigo-600"
-                }`}
-              >
-                {n === 0 ? "+0" : `+${n}`}
-              </button>
-            );
-          })}
-          {wiedervorlage && (
-            <button
-              type="button"
-              onClick={() => setWiedervorlage(null)}
-              className="px-1.5 py-0.5 rounded-md text-[10px] bg-red-50 text-red-400 hover:bg-red-100 transition-all"
-            >✕</button>
-          )}
-          {wiedervorlage && (
-            <span className="text-[10px] text-indigo-500 font-medium ml-1">
-              {wiedervorlage.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
-            </span>
-          )}
+            {/* Wiedervorlage */}
+            <div className="flex gap-1 items-center overflow-x-auto no-scrollbar">
+              <span className="text-[11px] font-semibold text-slate-400 mr-1 flex-shrink-0">Wiedervorlage</span>
+              {WIEDERVORLAGE_DAYS.map((n) => {
+                const isActive = wiedervorlage && (() => {
+                  const target = addDaysFromNow(n);
+                  return Math.abs(wiedervorlage.getTime() - target.getTime()) < 60 * 60 * 1000;
+                })();
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => {
+                      const newDate = addDaysFromNow(n);
+                      setWiedervorlage(isActive ? null : newDate);
+                    }}
+                    title={n === 0 ? "Heute" : `In ${n} ${n === 1 ? "Tag" : "Tagen"}`}
+                    className={`flex-shrink-0 min-w-[30px] px-1.5 py-1 rounded-md text-[11px] font-semibold transition-all active:scale-95 ${
+                      isActive ? "bg-indigo-500 text-white" : "glass-chip text-slate-500 hover:text-indigo-600"
+                    }`}
+                  >
+                    {n === 0 ? "Heute" : `+${n}`}
+                  </button>
+                );
+              })}
+              {wiedervorlage && (
+                <>
+                  <span className="text-[11px] text-indigo-500 font-semibold ml-1 flex-shrink-0">
+                    {wiedervorlage.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}
+                  </span>
+                  <button type="button" onClick={() => setWiedervorlage(null)} title="Entfernen"
+                    className="flex-shrink-0 px-1.5 py-1 rounded-md text-[10px] bg-red-50 text-red-400 hover:bg-red-100 transition-all">✕</button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
-
     </div>
   );
 }

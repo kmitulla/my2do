@@ -8,7 +8,13 @@ const listen = (channel) => (cb) => {
   return () => ipcRenderer.removeListener(channel, handler);
 };
 
+// "panel" = Seitenleiste, "detached" = eigenes Fenster für ein 2do / eine Notiz
+const windowKind = process.argv.includes("--my2do-window=detached") ? "detached" : "panel";
+
 contextBridge.exposeInMainWorld("my2doDesktop", {
+  windowKind,
+  mica: process.argv.includes("--my2do-mica"),
+  openWindow: (opts) => ipcRenderer.invoke("window:open", opts),
   getInfo: () => ipcRenderer.invoke("app:info"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (patch) => ipcRenderer.invoke("settings:set", patch),
@@ -33,7 +39,9 @@ contextBridge.exposeInMainWorld("my2doDesktop", {
 
 // Datei-Auswahl (z. B. E-Mail importieren): Panel nicht einfahren, solange
 // der Windows-Dialog offen ist
-window.addEventListener("click", (e) => {
-  const el = e.target;
-  if (el && el.tagName === "INPUT" && el.type === "file") ipcRenderer.send("panel:hold-until-focus");
-}, true);
+if (windowKind === "panel") {
+  window.addEventListener("click", (e) => {
+    const el = e.target;
+    if (el && el.tagName === "INPUT" && el.type === "file") ipcRenderer.send("panel:hold-until-focus");
+  }, true);
+}

@@ -1,26 +1,27 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   updateTodo, deleteTodo, addCategory, shareTodo, getAllUsers,
-  subscribeSharedTodo, acquireEditLock, refreshEditLock, releaseEditLock,
-  lockedByOther, splitSharedData, LOCK_HEARTBEAT_MS,
+  subscribeDocLive, todoLockPath, lockedByOther, splitSharedData,
 } from "@/lib/todoService";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
+import { canOpenWindows, openInWindow } from "@/lib/desktop";
+import useEditLock from "@/hooks/useEditLock";
 import { format } from "date-fns";
+import { Minus, X, AppWindow, Users, Lock, Save, Clock, Mail, CalendarPlus, FileText, Archive, Trash2 } from "lucide-react";
 import RichEditor from "./RichEditor";
 import QuickDateButtons from "./QuickDateButtons";
 import useConfirmReset from "@/hooks/useConfirmReset";
 import SyncIndicator from "./SyncIndicator";
 import TimestampInfo from "./TimestampInfo";
 import FavoriteButton from "./FavoriteButton";
-import { UsersIcon, LockIcon } from "./SharedBadge";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
 const PRIO_STYLES = { A: "bg-red-500", B: "bg-orange-400", C: "bg-emerald-500" };
 const PRIO_BTN = {
-  A: { active: "bg-red-500 text-white shadow-md", base: "glass-chip text-slate-500" },
-  B: { active: "bg-orange-400 text-white shadow-md", base: "glass-chip text-slate-500" },
-  C: { active: "bg-emerald-500 text-white shadow-md", base: "glass-chip text-slate-500" },
+  A: { active: "bg-red-500 text-white shadow-md shadow-red-500/25", base: "glass-chip text-slate-500" },
+  B: { active: "bg-orange-400 text-white shadow-md shadow-orange-400/25", base: "glass-chip text-slate-500" },
+  C: { active: "bg-emerald-500 text-white shadow-md shadow-emerald-500/25", base: "glass-chip text-slate-500" },
 };
 const STATUS_BTN = {
   "offen": { active: "bg-slate-600 text-white", base: "glass-chip text-slate-500" },
@@ -29,14 +30,18 @@ const STATUS_BTN = {
   "erledigt": { active: "bg-emerald-500 text-white", base: "glass-chip text-slate-500" },
 };
 
-function toInputDate(ts) {
-  if (!ts) return "";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return format(d, "yyyy-MM-dd'T'HH:mm");
-}
+const Label = ({ children, icon }) => (
+  <label className="section-label mb-1.5 flex items-center gap-1.5">{icon}{children}</label>
+);
 
-export default function TodoDetail({ todo, categories, onClose, onDelete, onMinimize, initialDraft }) {
+/**
+ * Editor für ein 2do.
+ * layout "modal": Blatt im Dashboard (einspaltig) · "window": eigenes Fenster
+ * (zweispaltig: links Titel + Beschreibung, rechts Eigenschaften).
+ */
+export default function TodoDetail({ todo, categories, onClose, onDelete, onMinimize, initialDraft, layout = "modal" }) {
   const { user, userProfile } = useFirebaseAuth();
+  const isWindow = layout === "window";
   const [form, setForm] = useState(
     initialDraft
       ? { ...initialDraft }
@@ -70,27 +75,32 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // null | "done" | "queued"
   const [shareResult, setShareResult] = useState(null);
 
-  // Geteilte 2dos: Live-Stand + Bearbeitungssperre.
-  // lockState: none (privat) | pending | mine | other (jemand anderes
-  // bearbeitet → gemeinsame Felder gesperrt) | offline (keine Sperre möglich)
-  const [live, setLive] = useState(todo.sharedId ? todo : null);
-  const [lockState, setLockState] = useState(() =>
-    !todo.sharedId ? "none" : lockedByOther(todo) ? "other" : "pending");
-  const liveRef = useRef(live);
-  const lockStateRef = useRef(lockState);
-  const acquireRef = useRef(null);
-  liveRef.current = live;
-  lockStateRef.current = lockState;
+  // Bearbeitungssperre: ein 2do ist immer nur in einem Editor bearbeitbar –
+  // egal ob eine andere Person (geteilt), ein zweites Fenster oder ein
+  // anderes Gerät es gerade offen hat
+  const lockPath = useMemo(() => todoLockPath(user.uid, { id: todo.id, sharedId }), [user.uid, todo.id, sharedId]);
+  const { lockState, live, otherLock, takeOver } = useEditLock({ path: lockPath, uid: user.uid, name: myName, initial: todo });
+  // Bei geteilten 2dos zusätzlich das eigene Dokument (Tags, Wiedervorlage)
+  const [ownLive, setOwnLive] = useState(null);
+  useEffect(() => {
+    if (!sharedId) return;
+    return subscribeDocLive(["users", user.uid, "todos", todo.id], setOwnLive);
+  }, [sharedId, user.uid, todo.id]);
+
   const commonLocked = lockState === "other";
-  const otherLock = commonLocked ? lockedByOther(live) || live?.editLock : null;
+  // Eigene Sperre aus anderem Fenster/Gerät → alles nur lesen (auch Tags)
+  const ownLock = commonLocked && otherLock?.uid === user.uid;
+  const allLocked = commonLocked && (!sharedId || ownLock);
+  const liveRef = useRef(live);
+  liveRef.current = live;
 
   // Track if dirty (for auto-save vs X close)
   const isDirtyRef = useRef(false);
-  const closedWithX = useRef(false);
   const richEditorRef = useRef(null);
 
   // Block horizontal scroll on the modal completely
   useEffect(() => {
+    if (isWindow) return;
     const handler = (e) => {
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
@@ -111,89 +121,16 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       document.removeEventListener("touchstart", down);
       document.removeEventListener("touchmove", handler);
     };
-  }, []);
+  }, [isWindow]);
 
-  // Sperre holen, per Heartbeat halten, beim Schließen/Minimieren freigeben.
-  // Ist das 2do gerade gesperrt, wird automatisch übernommen, sobald es frei ist.
-  useEffect(() => {
-    if (!sharedId) return;
-    let cancelled = false;
-    let holding = false;
-    let busy = false;
-
-    const tryAcquire = async () => {
-      if (busy || cancelled) return;
-      busy = true;
-      try {
-        const res = await acquireEditLock(sharedId, user.uid, myName);
-        if (cancelled) {
-          if (res.ok) releaseEditLock(sharedId);
-          return;
-        }
-        holding = res.ok;
-        setLockState(res.ok ? "mine" : res.lock ? "other" : "offline");
-      } catch {
-        // offline / Timeout: ohne Sperre weiterarbeiten, außer der Cache
-        // kennt eine aktive fremde Sperre
-        if (!cancelled) setLockState(lockedByOther(liveRef.current) ? "other" : "offline");
-      } finally {
-        busy = false;
-      }
-    };
-    acquireRef.current = tryAcquire;
-
-    const unsub = subscribeSharedTodo(sharedId, (data) => {
-      if (cancelled || !data) return;
-      setLive(data);
-      // Sperre verloren (z. B. nach Standby) → ab jetzt nur lesen
-      if (lockStateRef.current === "mine" && lockedByOther(data)) {
-        holding = false;
-        setLockState("other");
-      } else if (lockStateRef.current === "other" && !lockedByOther(data)) {
-        tryAcquire();
-      }
-    });
-    tryAcquire();
-
-    // Alle 5 s prüfen: eigene Sperre regelmäßig erneuern bzw. – falls keine
-    // gehalten wird – neu versuchen (fremde Sperre abgelaufen, wieder online)
-    let lastBeat = Date.now();
-    const heartbeat = setInterval(async () => {
-      if (holding) {
-        if (Date.now() - lastBeat < LOCK_HEARTBEAT_MS) return;
-        lastBeat = Date.now();
-        try {
-          if (!(await refreshEditLock(sharedId)) && !cancelled) {
-            holding = false;
-            setLockState(lockedByOther(liveRef.current) ? "other" : "offline");
-          }
-        } catch { /* offline – Sperre verfällt ggf., wird neu geholt */ }
-      } else if (!lockedByOther(liveRef.current)) {
-        lastBeat = Date.now();
-        tryAcquire();
-      }
-    }, 5000);
-
-    const onUnload = () => { if (holding) releaseEditLock(sharedId); };
-    window.addEventListener("pagehide", onUnload);
-
-    return () => {
-      cancelled = true;
-      acquireRef.current = null;
-      clearInterval(heartbeat);
-      window.removeEventListener("pagehide", onUnload);
-      unsub();
-      if (holding) releaseEditLock(sharedId);
-    };
-  }, [sharedId, user.uid]);
-
-  // Während jemand anderes bearbeitet: gemeinsame Felder live mitlaufen lassen,
-  // damit man nach der Freigabe auf dem neuesten Stand weiterarbeitet
+  // Solange woanders bearbeitet wird: Inhalt live mitlaufen lassen, damit man
+  // nach der Freigabe auf dem neuesten Stand weiterarbeitet
   useEffect(() => {
     if (lockState !== "other" || !live) return;
-    const { common } = splitSharedData(live);
-    setForm((f) => ({ ...f, ...common }));
-  }, [live, lockState]);
+    const { common, personal } = splitSharedData(live);
+    const personalLive = sharedId ? (ownLive ? splitSharedData(ownLive).personal : {}) : personal;
+    setForm((f) => ({ ...f, ...common, ...(allLocked ? personalLive : {}) }));
+  }, [live, ownLive, lockState, allLocked, sharedId]);
 
   useEffect(() => {
     if (initialDraft) {
@@ -218,6 +155,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     // Entwurfsstand darf ihn beim Speichern nicht überschreiben
     delete data.favorite;
     delete data.favoritedAt;
+    delete data.editLock;
     ["deadline", "wiedervorlage"].forEach((k) => {
       if (data[k] && typeof data[k] === "string") data[k] = new Date(data[k]);
       if (data[k] === "") data[k] = null;
@@ -227,13 +165,20 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
 
   // Gesperrt → nur die persönlichen Felder (Tags, Wiedervorlage) speichern
   const persist = () => {
+    if (allLocked) return false;
     const ok = updateTodo(user.uid, todo.id, buildSaveData(), { personalOnly: commonLocked });
-    if (!ok) alert(`${lockedByOther(liveRef.current)?.name || "Jemand"} bearbeitet dieses 2do gerade – deine Änderungen an Titel, Status & Co. konnten nicht gespeichert werden.`);
+    if (!ok) {
+      const lock = lockedByOther(liveRef.current);
+      alert(lock?.uid === user.uid
+        ? "Dieses 2do ist gerade in einem anderen Fenster geöffnet – die Änderungen konnten nicht gespeichert werden."
+        : `${lock?.name || "Jemand"} bearbeitet dieses 2do gerade – deine Änderungen an Titel, Status & Co. konnten nicht gespeichert werden.`);
+    }
     return ok;
   };
 
-  // Speichern & schließen (bisheriges Verhalten)
+  // Speichern & schließen
   const save = async () => {
+    if (allLocked) { onClose(); return; }
     setSaving(true);
     const ok = persist();
     setSaving(false);
@@ -242,7 +187,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
 
   // Speichern ohne zu schließen
   const saveOnly = async () => {
-    if (savingStay || saving) return;
+    if (savingStay || saving || allLocked) return;
     setSavingStay(true);
     persist();
     isDirtyRef.current = false;
@@ -257,17 +202,13 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     onMinimize?.({ ...form });
   };
 
-  // Auto-save on backdrop click (not X)
-  const handleBackdropClick = async (e) => {
-    if (e.target !== e.currentTarget) return;
-    if (isDirtyRef.current && !closedWithX.current) {
-      await updateTodo(user.uid, todo.id, buildSaveData());
-    }
-    onClose();
-  };
-
-  const handleXClose = () => {
-    closedWithX.current = true;
+  // In eigenem Fenster weiterarbeiten: aktuellen Stand speichern, Editor hier
+  // schließen (gibt die Sperre frei) – das Fenster übernimmt
+  const canPopOut = !isWindow && canOpenWindows();
+  const popOut = () => {
+    if (isDirtyRef.current && !allLocked) persist();
+    isDirtyRef.current = false;
+    openInWindow(`/todo/${todo.id}`, "todo", form.title);
     onClose();
   };
 
@@ -290,9 +231,11 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   };
 
   const addNewCategory = async () => {
-    if (!newCat.trim()) return;
-    await addCategory(user.uid, newCat.trim(), "#6366f1");
-    set("category", newCat.trim());
+    const name = newCat.trim();
+    if (!name) return;
+    await addCategory(user.uid, name, "#6366f1");
+    // neuen Tag direkt setzen
+    if (!(form.tags || []).includes(name)) set("tags", [...(form.tags || []), name]);
     setNewCat("");
     setShowNewCat(false);
   };
@@ -393,7 +336,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     setSelectedUids((prev) => prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid]);
   };
 
-  const members = live?.collaborators || [];
+  const members = (sharedId && live?.collaborators) || [];
   const shareCandidates = (allUsers || []).filter((u) => {
     if (members.includes(u.id)) return false;
     const q = userSearch.trim().toLowerCase();
@@ -407,7 +350,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     try {
       const data = { ...buildSaveData(), id: todo.id };
       if (todo.createdAt) data.createdAt = todo.createdAt;
-      if (isDirtyRef.current) {
+      if (isDirtyRef.current && !allLocked) {
         updateTodo(user.uid, todo.id, data, { personalOnly: commonLocked });
         isDirtyRef.current = false;
       }
@@ -416,12 +359,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         return { uid, name: u?.displayName || u?.email || "Unbekannt" };
       });
       const result = await shareTodo(user.uid, myName, data, recipients);
-      if (!sharedId) {
-        setLive({ ...data, collaborators: [user.uid, ...selectedUids], sharedBy: user.uid,
-          memberNames: { [user.uid]: myName, ...Object.fromEntries(recipients.map((r) => [r.uid, r.name])) } });
-        setLockState("pending");
-        setSharedId(todo.id);
-      }
+      if (!sharedId) setSharedId(todo.id);
       setShareResult(result);
       setSelectedUids([]);
       setUserSearch("");
@@ -459,383 +397,414 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // ── Bausteine ──────────────────────────────────────────────────────────────
+  const lockBadge = sharedId && (
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+      lockState === "mine" ? "bg-emerald-100 text-emerald-700"
+        : lockState === "other" ? "bg-amber-100 text-amber-700"
+        : "bg-slate-100 text-slate-500"
+    }`}>
+      {lockState === "mine" ? "Du bearbeitest" : lockState === "other" ? "Gesperrt" : lockState === "offline" ? "Offline" : "…"}
+    </span>
+  );
+
+  const membersBlock = sharedId && (
+    <div className={isWindow ? "glass rounded-[18px] p-3.5" : "rounded-2xl bg-sky-50/70 border border-sky-100 px-3 py-2.5"}>
+      <div className="flex items-center gap-2">
+        <span className="text-sky-500 flex-shrink-0"><Users size={14} /></span>
+        <span className="section-label flex-1">Mitbearbeiter</span>
+        {lockBadge}
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        {members.map((uid) => {
+          const name = uid === user.uid ? "Du" : (live?.memberNames?.[uid] || "Unbekannt");
+          const editing = otherLock?.uid === uid || (uid === user.uid && lockState === "mine");
+          return (
+            <span key={uid} title={live?.sharedBy === uid ? "Hat das 2do gesendet" : ""}
+              className={`inline-flex items-center gap-1.5 pl-0.5 pr-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                editing ? "bg-white border-emerald-300 text-emerald-700" : "bg-white/80 border-slate-200 text-slate-600"
+              }`}>
+              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
+                uid === user.uid ? "bg-gradient-to-br from-blue-400 to-indigo-500" : "bg-gradient-to-br from-sky-400 to-cyan-500"
+              }`}>{name[0]?.toUpperCase()}</span>
+              {name}
+              {live?.sharedBy === uid && <span className="text-amber-500" aria-hidden>★</span>}
+              {editing && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+            </span>
+          );
+        })}
+        <button onClick={openShare}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
+          + Hinzufügen
+        </button>
+      </div>
+      <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+        Gemeinsam: Titel, Beschreibung, Status, Priorität, Deadline &amp; Archiv · Nur für dich: Tags, Wiedervorlage &amp; Favorit
+      </p>
+    </div>
+  );
+
+  const lockBanner = commonLocked && (
+    <div className="flex items-start gap-2.5 rounded-2xl bg-amber-50/90 border border-amber-200 px-3 py-2.5">
+      <span className="text-amber-600 mt-0.5 flex-shrink-0"><Lock size={15} /></span>
+      {ownLock ? (
+        <div className="flex-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="flex-1 min-w-[180px] text-xs text-amber-800 leading-snug">
+            Dieses 2do ist gerade <b>in einem anderen Fenster oder auf einem anderen Gerät</b> geöffnet und wird hier nur angezeigt.
+          </p>
+          <button onClick={takeOver}
+            className="px-3 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-semibold shadow-sm hover:bg-amber-600">
+            Hier bearbeiten
+          </button>
+        </div>
+      ) : (
+        <div className="text-xs text-amber-800 leading-snug">
+          <b>{otherLock?.name || "Jemand"}</b> bearbeitet dieses 2do gerade.
+          Titel, Beschreibung, Status &amp; Co. sind solange gesperrt und laufen live mit –
+          Tags und Wiedervorlage kannst du trotzdem ändern. Sobald frei, kannst du automatisch weiterarbeiten.
+        </div>
+      )}
+    </div>
+  );
+
+  const sharePanel = showShare && (
+    <div className="rounded-2xl bg-white/90 border border-indigo-200 shadow-sm p-3 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-indigo-500"><Users size={15} /></span>
+        <span className="text-sm font-semibold text-slate-700 flex-1">
+          {sharedId ? "Mitbearbeiter hinzufügen" : "An andere senden"}
+        </span>
+        <button onClick={closeShare} title="Schließen (Esc)" className="btn-icon btn-icon-sm"><X size={14} /></button>
+      </div>
+      {shareResult ? (
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-xs text-emerald-700 font-medium">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          {shareResult === "done"
+            ? "Gesendet! Erscheint bei den Empfängern in der Inbox."
+            : "Gespeichert – wird gesendet, sobald du wieder online bist."}
+        </div>
+      ) : (
+        <>
+          <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} autoFocus
+            placeholder="Name oder E-Mail suchen…"
+            className="w-full px-3 py-2 rounded-xl glass-input text-sm" />
+          <div className="max-h-48 overflow-y-auto -mx-1 px-1 space-y-0.5">
+            {allUsers === null && <p className="text-xs text-slate-400 py-2 text-center">Lade Personen…</p>}
+            {allUsers !== null && shareCandidates.length === 0 && (
+              <p className="text-xs text-slate-400 py-2 text-center">Keine weiteren Personen gefunden.</p>
+            )}
+            {shareCandidates.map((u) => {
+              const sel = selectedUids.includes(u.id);
+              const name = u.displayName || u.email || "Unbekannt";
+              return (
+                <button key={u.id} type="button" onClick={() => toggleUser(u.id)}
+                  className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-all ${
+                    sel ? "bg-indigo-50 ring-1 ring-indigo-300" : "hover:bg-slate-50"
+                  }`}>
+                  <span className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
+                    {name[0].toUpperCase()}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-xs font-semibold text-slate-700 truncate">{name}</span>
+                    {u.email && u.email !== name && <span className="block text-[10px] text-slate-400 truncate">{u.email}</span>}
+                  </span>
+                  <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
+                    sel ? "bg-indigo-500 border-indigo-500 text-white" : "border-slate-300"
+                  }`}>
+                    {sel && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-slate-400 leading-snug">
+            Empfänger werden <b>Mitbearbeiter</b>: Titel, Beschreibung, Status, Priorität, Deadline &amp; Archiv sind gemeinsam.
+            Tags, Wiedervorlage &amp; Favoriten setzt jeder für sich.
+          </p>
+          <button onClick={handleShare} disabled={selectedUids.length === 0 || sharing}
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-50">
+            {sharing ? "Sende…" : selectedUids.length ? `Senden an ${selectedUids.length} ${selectedUids.length === 1 ? "Person" : "Personen"}` : "Personen auswählen"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  const card = (content) => (isWindow ? <div className="glass rounded-[18px] p-3.5">{content}</div> : content);
+
+  const statusBlock = card(
+    <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
+      <Label>Status</Label>
+      <div className="flex gap-1.5 flex-wrap">
+        {STATUSES.map((s) => (
+          <button key={s} type="button" onClick={() => set("status", s)}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${form.status === s ? STATUS_BTN[s].active : STATUS_BTN[s].base}`}>
+            {s}
+          </button>
+        ))}
+      </div>
+      {/* Eigener / individueller Status — freier Text, optional */}
+      <div className="relative mt-2">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-violet-500" />
+        <input
+          value={form.manualStatus || ""}
+          onChange={(e) => set("manualStatus", e.target.value)}
+          placeholder="Eigener Status … (optional)"
+          maxLength={80}
+          className="w-full pl-7 pr-3 py-2 rounded-xl bg-violet-50/70 border border-violet-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
+        />
+      </div>
+    </fieldset>
+  );
+
+  const wiedervorlageBlock = card(
+    <fieldset disabled={allLocked} className="min-w-0 disabled:opacity-60">
+      <Label icon={<Clock size={12} />}>Wiedervorlage</Label>
+      <QuickDateButtons value={form.wiedervorlage} onChange={(v) => set("wiedervorlage", v)} />
+    </fieldset>
+  );
+
+  const titleBlock = isWindow ? (
+    <fieldset disabled={commonLocked} className="min-w-0">
+      <input value={form.title || ""} onChange={(e) => set("title", e.target.value)} placeholder="Titel"
+        className="w-full px-1 py-1 bg-transparent border-0 border-b-2 border-transparent focus:border-indigo-300 focus:outline-none text-2xl font-semibold text-slate-800 placeholder-slate-300 tracking-tight disabled:opacity-70" />
+    </fieldset>
+  ) : (
+    <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-70">
+      <Label>Titel *</Label>
+      <input value={form.title || ""} onChange={(e) => set("title", e.target.value)}
+        className="w-full px-4 py-2.5 rounded-2xl glass-input text-slate-800 text-[15px]" />
+    </fieldset>
+  );
+
+  const descriptionBlock = (
+    <div className={commonLocked ? "opacity-80" : ""}>
+      {!isWindow && <Label>Beschreibung</Label>}
+      <RichEditor
+        ref={richEditorRef}
+        value={form.description || ""}
+        onChange={(v) => set("description", v)}
+        placeholder="Beschreibung eingeben…"
+        minHeight={isWindow ? 460 : 200}
+        readOnly={commonLocked}
+      />
+    </div>
+  );
+
+  const prioBlock = card(
+    <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
+      <Label>Priorität</Label>
+      <div className="flex gap-2">
+        {PRIOS.map((p) => (
+          <button key={p} type="button" onClick={() => set("prio", p)}
+            className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${form.prio === p ? PRIO_BTN[p].active : PRIO_BTN[p].base}`}>
+            {p}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+
+  const tagsBlock = card(
+    <fieldset disabled={allLocked} className="min-w-0 disabled:opacity-60">
+      <Label>Tags</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {categories.map((c) => {
+          const active = (form.tags || []).includes(c.name);
+          return (
+            <button key={c.id} type="button"
+              onClick={() => {
+                const current = form.tags || [];
+                set("tags", active ? current.filter((t) => t !== c.name) : [...current, c.name]);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
+                active ? "bg-indigo-500 text-white border-indigo-500 shadow-sm" : "bg-white/80 text-slate-600 border-slate-200 hover:border-indigo-300"
+              }`}>
+              {active && <span className="mr-1">✓</span>}{c.name}
+            </button>
+          );
+        })}
+        <button onClick={() => setShowNewCat(!showNewCat)} type="button"
+          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition-all">
+          + Neuer Tag
+        </button>
+      </div>
+      {showNewCat && (
+        <div className="flex gap-2 mt-2">
+          <input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Tag-Name" autoFocus
+            className="flex-1 min-w-0 px-3 py-2 rounded-xl glass-input text-sm"
+            onKeyDown={(e) => e.key === "Enter" && addNewCategory()} />
+          <button onClick={addNewCategory} className="px-3 py-2 rounded-xl bg-indigo-500 text-white text-sm font-semibold">OK</button>
+        </div>
+      )}
+    </fieldset>
+  );
+
+  const deadlineBlock = card(
+    <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
+      <Label icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>}>
+        Deadline
+      </Label>
+      <QuickDateButtons value={form.deadline} onChange={(v) => set("deadline", v)} withTime />
+    </fieldset>
+  );
+
+  const exportBlock = card(
+    <div className={isWindow ? "" : "border-t border-slate-200/60 pt-4"}>
+      <Label icon={<Mail size={12} />}>Weitergeben</Label>
+      <div className="grid grid-cols-3 gap-2">
+        <button onClick={openEmailClient} title="E-Mail mit Titel als Betreff"
+          className="py-2.5 rounded-xl glass-chip text-slate-700 text-[13px] font-semibold flex items-center justify-center gap-1.5 hover:text-indigo-600">
+          <Mail size={15} /> E-Mail
+        </button>
+        <button onClick={openCalendar} title="Kalendertermin (.ics) – öffnet Outlook / iPhone-Kalender"
+          className="py-2.5 rounded-xl glass-chip text-slate-700 text-[13px] font-semibold flex items-center justify-center gap-1.5 hover:text-emerald-600">
+          <CalendarPlus size={15} /> Kalender
+        </button>
+        <button onClick={exportWord} disabled={exportingWord} title="Als Word-Datei (.docx) exportieren"
+          className="py-2.5 rounded-xl glass-chip text-slate-700 text-[13px] font-semibold flex items-center justify-center gap-1.5 hover:text-blue-600 disabled:opacity-60">
+          {exportingWord
+            ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+            : <FileText size={15} />}
+          {exportingWord ? "…" : "Word"}
+        </button>
+      </div>
+    </div>
+  );
+
+  const headerActions = (
+    <>
+      <button onClick={showShare ? closeShare : openShare}
+        title={sharedId ? "Weitere Mitbearbeiter hinzufügen" : "An andere senden (als Mitbearbeiter)"}
+        className={`btn-icon ${showShare ? "btn-icon-active" : sharedId ? "text-sky-600" : ""}`}>
+        <Users size={17} />
+      </button>
+      <FavoriteButton todo={todo} favorite={favorite} onToggled={setFavorite}
+        size={16} className="btn-icon" />
+    </>
+  );
+
+  const footer = (
+    <div className={`flex-shrink-0 flex gap-2 ${isWindow ? "max-w-6xl w-full mx-auto px-5 py-3" : "border-t border-white/60 p-3.5 rounded-b-[28px]"}`}>
+      <button onClick={insertTimestampInDescription} title="Zeitmarke einfügen (Strg+T)" disabled={commonLocked}
+        className="w-10 h-10 rounded-2xl glass-chip text-indigo-500 flex items-center justify-center flex-shrink-0 disabled:opacity-40">
+        <Clock size={16} />
+      </button>
+      <button ref={archiveBtnRef} onClick={handleArchive} disabled={commonLocked}
+        title={commonLocked ? "Gesperrt, solange woanders bearbeitet wird" : sharedId ? "Archiviert das 2do für alle Mitbearbeiter" : "Archivieren"}
+        className={`flex-1 max-w-[160px] py-2.5 rounded-2xl text-sm font-medium transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 ${confirmArchive ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-amber-50/80 border border-amber-200 text-amber-600"}`}>
+        {!confirmArchive && <Archive size={15} className="hidden sm:inline" />}
+        {confirmArchive ? "Wirklich?" : "Archivieren"}
+      </button>
+      <button ref={deleteBtnRef} onClick={handleDelete}
+        title={sharedId ? "Nur für dich entfernen – die anderen Mitbearbeiter behalten das 2do" : "Löschen"}
+        className={`flex-1 max-w-[160px] py-2.5 rounded-2xl text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${confirmDelete ? "bg-red-500 text-white shadow-lg shadow-red-500/30" : "bg-red-50/80 border border-red-200 text-red-600"}`}>
+        {!confirmDelete && <Trash2 size={15} className="hidden sm:inline" />}
+        {confirmDelete ? "Wirklich?" : sharedId ? "Entfernen" : "Löschen"}
+      </button>
+      {isWindow && <span className="flex-1" />}
+      <button onClick={saveOnly} disabled={saving || savingStay || allLocked} title="Speichern (offen lassen) · Strg+S"
+        className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-50 ${
+          savedFlash ? "bg-emerald-500 text-white shadow-md" : "bg-blue-50 border border-blue-200 text-blue-500 hover:bg-blue-100"
+        }`}>
+        {savingStay ? (
+          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+        ) : savedFlash ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        ) : (
+          <Save size={16} />
+        )}
+      </button>
+      <button onClick={save} disabled={saving || savingStay} title="Speichern & schließen · Strg+Enter"
+        className={`${isWindow ? "px-6" : "flex-1"} py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-60`}>
+        {saving ? "..." : allLocked ? "Schließen" : isWindow ? "Speichern & schließen" : "Speichern"}
+      </button>
+    </div>
+  );
+
+  // ── Eigenes Fenster: zweispaltig ───────────────────────────────────────────
+  if (isWindow) {
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-6xl mx-auto px-5 pt-3 pb-6 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
+              <div className="flex-1 min-w-0">{titleBlock}</div>
+              <SyncIndicator />
+              {headerActions}
+            </div>
+            <TimestampInfo createdAt={todo.createdAt} updatedAt={live?.updatedAt || lastUpdated} className="px-6 -mt-1" />
+            {lockBanner}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+              <div className="space-y-3 min-w-0">
+                {descriptionBlock}
+              </div>
+              <div className="space-y-3 min-w-0">
+                {sharePanel}
+                {membersBlock}
+                {statusBlock}
+                {prioBlock}
+                {deadlineBlock}
+                {wiedervorlageBlock}
+                {tagsBlock}
+                {exportBlock}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex-shrink-0 border-t border-slate-200/70 bg-white/55 backdrop-blur-xl">{footer}</div>
+      </div>
+    );
+  }
+
+  // ── Blatt im Dashboard: einspaltig ─────────────────────────────────────────
   return (
     <div className="w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl glass-strong rounded-t-[28px] sm:rounded-[28px] max-h-[95vh] flex flex-col mx-auto"
         style={{ touchAction: "pan-y", overflowX: "hidden", maxWidth: "100vw" }}>
 
-        {/* Header */}
-        <div className="flex-shrink-0 border-b border-white/50 px-5 py-3 flex items-center gap-3 rounded-t-[28px]">
-          <div className={`w-3 h-3 rounded-full ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
+        {/* Kopf */}
+        <div className="flex-shrink-0 border-b border-white/60 pl-5 pr-2.5 py-2.5 flex items-center gap-2 rounded-t-[28px]">
+          <div className={`w-3 h-3 rounded-full flex-shrink-0 ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 min-w-0">
-              <h2 className="text-base font-semibold text-slate-800 truncate">Notiz bearbeiten</h2>
-              <SyncIndicator />
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="text-[15px] font-semibold text-slate-800 truncate">2do bearbeiten</h2>
+              <SyncIndicator compact />
             </div>
             <TimestampInfo createdAt={todo.createdAt} updatedAt={live?.updatedAt || lastUpdated} className="mt-0.5" />
           </div>
-          <button onClick={showShare ? closeShare : openShare}
-            title={sharedId ? "Weitere Mitbearbeiter hinzufügen" : "An andere senden (als Mitbearbeiter)"}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-              showShare ? "bg-indigo-500 text-white shadow-md" : sharedId ? "glass-chip text-sky-600" : "glass-chip text-slate-500"
-            }`}>
-            <UsersIcon size={14} />
-          </button>
-          <FavoriteButton todo={todo} favorite={favorite} onToggled={setFavorite}
-            size={14} className="w-8 h-8 rounded-full glass-chip" />
-          {onMinimize && (
-            <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)"
-              className="w-8 h-8 rounded-full glass-chip flex items-center justify-center text-slate-500">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="19"/></svg>
+          {headerActions}
+          {canPopOut && (
+            <button onClick={popOut} title="In eigenem Fenster öffnen" className="btn-icon">
+              <AppWindow size={17} />
             </button>
           )}
-          <button onClick={handleXClose} title="Schließen ohne zu speichern" className="w-8 h-8 rounded-full glass-chip flex items-center justify-center text-slate-500">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          {onMinimize && (
+            <button onClick={handleMinimize} title="Minimieren (Änderungen bleiben erhalten)" className="btn-icon">
+              <Minus size={17} />
+            </button>
+          )}
+          <button onClick={onClose} title="Schließen ohne zu speichern" className="btn-icon">
+            <X size={17} />
           </button>
         </div>
 
-        {/* Scrollable body */}
+        {/* Inhalt */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-5 space-y-4" style={{ overflowX: "hidden", maxWidth: "100%" }}>
-
-          {/* Mitbearbeiter + Sperrstatus (nur geteilte 2dos) */}
-          {sharedId && (
-            <div className="rounded-2xl bg-sky-50/70 border border-sky-100 px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-sky-500 flex-shrink-0"><UsersIcon size={13} /></span>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Mitbearbeiter</span>
-                <span className="flex-1" />
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  lockState === "mine" ? "bg-emerald-100 text-emerald-700"
-                    : lockState === "other" ? "bg-amber-100 text-amber-700"
-                    : "bg-slate-100 text-slate-500"
-                }`}>
-                  {lockState === "mine" ? "Du bearbeitest" : lockState === "other" ? "Gesperrt" : lockState === "offline" ? "Offline" : "…"}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {members.map((uid) => {
-                  const name = uid === user.uid ? "Du" : (live?.memberNames?.[uid] || "Unbekannt");
-                  const editing = otherLock?.uid === uid || (uid === user.uid && lockState === "mine");
-                  return (
-                    <span key={uid} title={live?.sharedBy === uid ? "Hat das 2do gesendet" : ""}
-                      className={`inline-flex items-center gap-1.5 pl-0.5 pr-2 py-0.5 rounded-full text-[11px] font-medium border ${
-                        editing ? "bg-white border-emerald-300 text-emerald-700" : "bg-white/80 border-slate-200 text-slate-600"
-                      }`}>
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
-                        uid === user.uid ? "bg-gradient-to-br from-blue-400 to-indigo-500" : "bg-gradient-to-br from-sky-400 to-cyan-500"
-                      }`}>{name[0]?.toUpperCase()}</span>
-                      {name}
-                      {live?.sharedBy === uid && <span className="text-amber-500" aria-hidden>★</span>}
-                      {editing && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-                    </span>
-                  );
-                })}
-                <button onClick={openShare}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
-                  + Hinzufügen
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-2 leading-snug">
-                Gemeinsam: Titel, Beschreibung, Status, Priorität, Deadline &amp; Archiv · Nur für dich: Tags, Wiedervorlage &amp; Favorit
-              </p>
-            </div>
-          )}
-
-          {/* Gesperrt-Hinweis */}
-          {commonLocked && (
-            <div className="flex items-start gap-2.5 rounded-2xl bg-amber-50/90 border border-amber-200 px-3 py-2.5">
-              <span className="text-amber-600 mt-0.5 flex-shrink-0"><LockIcon size={14} /></span>
-              <div className="text-xs text-amber-800 leading-snug">
-                <b>{otherLock?.name || "Jemand"}</b> bearbeitet dieses 2do gerade.
-                Titel, Beschreibung, Status &amp; Co. sind solange gesperrt und laufen live mit –
-                Tags und Wiedervorlage kannst du trotzdem ändern. Sobald frei, kannst du automatisch weiterarbeiten.
-              </div>
-            </div>
-          )}
-
-          {/* Senden an andere User */}
-          {showShare && (
-            <div className="rounded-2xl bg-white/85 border border-indigo-200 shadow-sm p-3 space-y-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-indigo-500"><UsersIcon size={14} /></span>
-                <span className="text-sm font-semibold text-slate-700 flex-1">
-                  {sharedId ? "Mitbearbeiter hinzufügen" : "An andere senden"}
-                </span>
-                <button onClick={closeShare} title="Schließen (Esc)"
-                  className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-              {shareResult ? (
-                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-xs text-emerald-700 font-medium">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  {shareResult === "done"
-                    ? "Gesendet! Erscheint bei den Empfängern in der Inbox."
-                    : "Gespeichert – wird gesendet, sobald du wieder online bist."}
-                </div>
-              ) : (
-                <>
-                  <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} autoFocus
-                    placeholder="Name oder E-Mail suchen…"
-                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                  <div className="max-h-48 overflow-y-auto -mx-1 px-1 space-y-0.5">
-                    {allUsers === null && <p className="text-xs text-slate-400 py-2 text-center">Lade Personen…</p>}
-                    {allUsers !== null && shareCandidates.length === 0 && (
-                      <p className="text-xs text-slate-400 py-2 text-center">Keine weiteren Personen gefunden.</p>
-                    )}
-                    {shareCandidates.map((u) => {
-                      const sel = selectedUids.includes(u.id);
-                      const name = u.displayName || u.email || "Unbekannt";
-                      return (
-                        <button key={u.id} type="button" onClick={() => toggleUser(u.id)}
-                          className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-all ${
-                            sel ? "bg-indigo-50 ring-1 ring-indigo-300" : "hover:bg-slate-50"
-                          }`}>
-                          <span className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
-                            {name[0].toUpperCase()}
-                          </span>
-                          <span className="flex-1 min-w-0">
-                            <span className="block text-xs font-semibold text-slate-700 truncate">{name}</span>
-                            {u.email && u.email !== name && <span className="block text-[10px] text-slate-400 truncate">{u.email}</span>}
-                          </span>
-                          <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
-                            sel ? "bg-indigo-500 border-indigo-500 text-white" : "border-slate-300"
-                          }`}>
-                            {sel && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-snug">
-                    Empfänger werden <b>Mitbearbeiter</b>: Titel, Beschreibung, Status, Priorität, Deadline &amp; Archiv sind gemeinsam.
-                    Tags, Wiedervorlage &amp; Favoriten setzt jeder für sich.
-                  </p>
-                  <button onClick={handleShare} disabled={selectedUids.length === 0 || sharing}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-50">
-                    {sharing ? "Sende…" : selectedUids.length ? `Senden an ${selectedUids.length} ${selectedUids.length === 1 ? "Person" : "Personen"}` : "Personen auswählen"}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Status - compact chips row at top */}
-          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</label>
-            <div className="flex gap-1.5 flex-wrap">
-              {STATUSES.map((s) => (
-                <button key={s} type="button" onClick={() => set("status", s)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${form.status === s ? STATUS_BTN[s].active : STATUS_BTN[s].base}`}>
-                  {s}
-                </button>
-              ))}
-            </div>
-            {/* Eigener / individueller Status — freier Text, optional */}
-            <div className="relative mt-2">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-violet-500" />
-              <input
-                value={form.manualStatus || ""}
-                onChange={(e) => set("manualStatus", e.target.value)}
-                placeholder="Eigener Status … (optional)"
-                maxLength={80}
-                className="w-full pl-7 pr-3 py-2 rounded-xl bg-violet-50/70 border border-violet-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
-              />
-            </div>
-          </fieldset>
-
-          {/* Wiedervorlage — quick buttons + date picker */}
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/></svg>
-              Wiedervorlage
-            </label>
-            <QuickDateButtons
-              value={form.wiedervorlage}
-              onChange={(v) => set("wiedervorlage", v)}
-            />
-          </div>
-
-          {/* Title */}
-          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-70">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Titel *</label>
-            <input value={form.title || ""} onChange={(e) => set("title", e.target.value)}
-              className="w-full px-4 py-2.5 rounded-2xl glass-input text-slate-800 text-[15px]" />
-          </fieldset>
-
-          {/* Description - rich editor */}
-          <div className={commonLocked ? "opacity-80" : ""}>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Beschreibung</label>
-            <RichEditor
-              ref={richEditorRef}
-              value={form.description || ""}
-              onChange={(v) => set("description", v)}
-              placeholder="Beschreibung eingeben..."
-              minHeight={200}
-              readOnly={commonLocked}
-            />
-          </div>
-
-          {/* Prio */}
-          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität</label>
-            <div className="flex gap-2">
-              {PRIOS.map((p) => (
-                <button key={p} type="button" onClick={() => set("prio", p)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${form.prio === p ? PRIO_BTN[p].active : PRIO_BTN[p].base}`}>
-                  {p}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          {/* Tags */}
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Tags</label>
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {categories.map((c) => {
-                const active = (form.tags || []).includes(c.name);
-                return (
-                  <button key={c.id} type="button"
-                    onClick={() => {
-                      const current = form.tags || [];
-                      set("tags", active ? current.filter((t) => t !== c.name) : [...current, c.name]);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all border ${
-                      active ? "bg-indigo-500 text-white border-indigo-500 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
-                    }`}>
-                    {active && <span className="mr-1">✓</span>}{c.name}
-                  </button>
-                );
-              })}
-              <button onClick={() => setShowNewCat(!showNewCat)} type="button"
-                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition-all">
-                + Neuer Tag
-              </button>
-            </div>
-            {showNewCat && (
-              <div className="flex gap-2">
-                <input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Tag-Name"
-                  className="flex-1 px-3 py-2 rounded-xl bg-white/80 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
-                  onKeyDown={(e) => e.key === "Enter" && addNewCategory()} />
-                <button onClick={addNewCategory} className="px-3 py-2 rounded-xl bg-blue-500 text-white text-sm">OK</button>
-              </div>
-            )}
-            {(form.tags || []).length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {(form.tags || []).map((t) => (
-                  <span key={t} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-600 text-[11px] font-medium">
-                    #{t}
-                    <button type="button" onClick={() => set("tags", (form.tags || []).filter((x) => x !== t))} className="text-indigo-400 hover:text-indigo-600 leading-none">✕</button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Deadline — quick buttons + date picker */}
-          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              Deadline
-            </label>
-            <QuickDateButtons
-              value={form.deadline}
-              onChange={(v) => set("deadline", v)}
-              withTime
-            />
-          </fieldset>
-
-          {/* Email + Calendar - compact side by side */}
-          <div className="border-t border-slate-100 pt-4">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-              E-Mail, Kalender &amp; Word
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={openEmailClient}
-                className="flex-1 min-w-[104px] py-2.5 rounded-2xl bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium hover:from-slate-700 hover:to-slate-800 transition-all flex items-center justify-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                E-Mail
-              </button>
-              <button onClick={openCalendar}
-                className="flex-1 min-w-[104px] py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                Kalender
-              </button>
-              <button onClick={exportWord} disabled={exportingWord} title="Als Word-Datei (.docx) exportieren"
-                className="flex-1 min-w-[104px] py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60">
-                {exportingWord ? (
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                    <path d="M8 13l1.4 4.5L11 13l1.6 4.5L14 13" strokeWidth="1.6"/>
-                  </svg>
-                )}
-                {exportingWord ? "Erstellt…" : "Word"}
-              </button>
-            </div>
-            <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender · Word: .docx mit Titel &amp; Details</p>
-          </div>
-
+          {membersBlock}
+          {lockBanner}
+          {sharePanel}
+          {statusBlock}
+          {wiedervorlageBlock}
+          {titleBlock}
+          {descriptionBlock}
+          {prioBlock}
+          {tagsBlock}
+          {deadlineBlock}
+          {exportBlock}
         </div>
 
-        {/* Footer */}
-        <div className="flex-shrink-0 border-t border-white/50 p-4 flex gap-2 rounded-b-[28px]">
-          {/* Zeitmarke */}
-          <button onClick={insertTimestampInDescription} title="Zeitmarke einfügen"
-            className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-500 flex items-center justify-center flex-shrink-0 hover:bg-indigo-100 transition-all">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-          </button>
-          <button ref={archiveBtnRef} onClick={handleArchive} disabled={commonLocked}
-            title={commonLocked ? "Gesperrt, solange jemand anderes bearbeitet" : sharedId ? "Archiviert das 2do für alle Mitbearbeiter" : "Archivieren"}
-            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all disabled:opacity-50 ${confirmArchive ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-amber-50/70 border border-amber-200 text-amber-600"}`}>
-            {confirmArchive ? "Wirklich?" : "Archivieren"}
-          </button>
-          <button ref={deleteBtnRef} onClick={handleDelete}
-            title={sharedId ? "Nur für dich entfernen – die anderen Mitbearbeiter behalten das 2do" : "Löschen"}
-            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmDelete ? "bg-red-500 text-white shadow-lg shadow-red-500/30" : "bg-red-50/70 border border-red-200 text-red-600"}`}>
-            {confirmDelete ? "Wirklich?" : sharedId ? "Entfernen" : "Löschen"}
-          </button>
-          <button onClick={saveOnly} disabled={saving || savingStay} title="Speichern (offen lassen) · Strg+S"
-            className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-60 ${
-              savedFlash
-                ? "bg-emerald-500 text-white shadow-md"
-                : "bg-blue-50 border border-blue-200 text-blue-500 hover:bg-blue-100"
-            }`}>
-            {savingStay ? (
-              <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-            ) : savedFlash ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-              </svg>
-            )}
-          </button>
-          <button onClick={save} disabled={saving || savingStay} title="Speichern & schließen · Strg+Enter"
-            className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-60">
-            {saving ? "..." : "Speichern"}
-          </button>
-        </div>
+        {footer}
     </div>
-  );
-}
-
-// Auto-growing textarea
-function AutoGrowTextarea({ value, onChange, placeholder, minRows = 4 }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.style.height = "auto";
-      ref.current.style.height = ref.current.scrollHeight + "px";
-    }
-  }, [value]);
-  return (
-    <textarea ref={ref} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-      rows={minRows}
-      className="w-full px-4 py-2.5 rounded-2xl bg-white/80 border border-slate-200 text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 resize-none overflow-hidden" />
   );
 }

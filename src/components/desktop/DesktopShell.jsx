@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { desktop, sendAppCommand, acceleratorKeys, acceleratorFromEvent } from "@/lib/desktop";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { desktop, windowKind, sendAppCommand, acceleratorKeys, acceleratorFromEvent } from "@/lib/desktop";
+import { PanelContext, usePanel } from "./panelContext";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 const Icon = ({ children, size = 15 }) => (
@@ -9,9 +10,6 @@ const Icon = ({ children, size = 15 }) => (
 );
 const PinIcon = ({ filled }) => (
   <Icon><path d="M12 17v5" /><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z" fill={filled ? "currentColor" : "none"} /></Icon>
-);
-const KeyboardIcon = () => (
-  <Icon><rect x="2" y="6" width="20" height="12" rx="2.5" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></Icon>
 );
 const SlidersIcon = () => (
   <Icon><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></Icon>
@@ -129,7 +127,7 @@ function Overlay({ title, onClose, children, footer }) {
       <div className="dp-sheet">
         <div className="flex items-center gap-2 px-5 pt-4 pb-2">
           <h2 className="flex-1 text-[15px] font-bold text-slate-800 tracking-tight">{title}</h2>
-          <button onClick={onClose} className="dp-iconbtn" title="Schließen (Esc)"><CloseIcon /></button>
+          <button onClick={onClose} className="btn-icon btn-icon-sm" title="Schließen (Esc)"><CloseIcon /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3">{children}</div>
         {footer}
@@ -182,8 +180,31 @@ function SettingsOverlay({ settings, onClose }) {
         <Toggle label="Am rechten Bildschirmrand ausfahren" hint="Maus kurz an den rechten Rand schieben."
           checked={settings.edgeReveal} onChange={(v) => patch({ edgeReveal: v })} />
         {settings.edgeReveal && (
-          <Toggle label="Auf allen Bildschirmen" hint="Sonst nur auf dem Bildschirm, auf dem 2Do zuletzt offen war."
-            checked={settings.edgeAllDisplays} onChange={(v) => patch({ edgeAllDisplays: v })} />
+          <>
+            <Toggle label="Griff am Rand zeigen" hint="Dezente Leiste am Bildschirmrand – dort fährt 2Do aus."
+              checked={settings.edgeHandle} onChange={(v) => patch({ edgeHandle: v })} />
+            <div className="py-2.5">
+              <div className="flex items-center gap-3">
+                <span className="flex-1 text-[13px] font-medium text-slate-700">Position am Rand</span>
+                <span className="text-[13px] font-semibold text-indigo-600 tabular-nums">
+                  {settings.handlePos < 35 ? "oben" : settings.handlePos > 65 ? "unten" : "Mitte"}
+                </span>
+              </div>
+              <input type="range" min="10" max="90" step="1" value={settings.handlePos}
+                onChange={(e) => patch({ handlePos: Number(e.target.value) })} className="dp-range mt-2" />
+            </div>
+            <div className="py-2.5">
+              <div className="flex items-center gap-3">
+                <span className="flex-1 text-[13px] font-medium text-slate-700">Länge des Griffs</span>
+                <span className="text-[13px] font-semibold text-indigo-600 tabular-nums">{settings.handleSize} %</span>
+              </div>
+              <input type="range" min="12" max="80" step="1" value={settings.handleSize}
+                onChange={(e) => patch({ handleSize: Number(e.target.value) })} className="dp-range mt-2" />
+              <span className="block text-[11px] text-slate-400 mt-1">Ausgefahren wird nur, wenn die Maus ungefähr in diesem Bereich an den Rand stößt.</span>
+            </div>
+            <Toggle label="Auf allen Bildschirmen" hint="Sonst nur auf dem Bildschirm, auf dem 2Do zuletzt offen war."
+              checked={settings.edgeAllDisplays} onChange={(v) => patch({ edgeAllDisplays: v })} />
+          </>
         )}
         <Toggle label="Erinnerungen" hint="Windows-Hinweis bei fälligen Wiedervorlagen und kurz vor einer Deadline."
           checked={settings.reminders} onChange={(v) => patch({ reminders: v })} />
@@ -229,14 +250,14 @@ function HelpOverlay({ settings, onClose }) {
         {rows([
           [settings.toggleShortcut, "Panel ein-/ausfahren"],
           [settings.quickAddShortcut, "Neues 2do erfassen"],
-          [["Maus", "→", "rechter Rand"], "Panel ausfahren"],
+          [["Maus", "→", "Griff am Rand"], "Panel ausfahren"],
         ])}
       </Section>
       <Section title="Im Panel">
         {rows([
           [["Strg", "N"], "Neues 2do"],
           [["Strg", "F"], "Suchen"],
-          [["Strg", "1 … 6"], "Bereich wechseln"],
+          [["Strg", "1 … 5"], "Bereich wechseln"],
           [["Strg", "P"], "Anheften / lösen"],
           [["Strg", ","], "Desktop-Einstellungen"],
           [["F1"], "Diese Übersicht"],
@@ -258,7 +279,8 @@ function HelpOverlay({ settings, onClose }) {
 function WelcomeOverlay({ settings, onClose, onSettings }) {
   const steps = [
     { icon: "⌨️", title: "Per Tastenkürzel", text: <>Mit <Keys accelerator={settings.toggleShortcut} small /> fährt 2Do auf dem Bildschirm aus, auf dem gerade deine Maus ist – nochmal drücken fährt es ein.</> },
-    { icon: "🖱️", title: "Am Bildschirmrand", text: "Schieb die Maus an den rechten Rand: 2Do kommt raus und bleibt, solange die Maus drauf ist. Danach rollt es sich nach 3 Sekunden wieder ein." },
+    { icon: "🖱️", title: "Am Bildschirmrand", text: "Schieb die Maus rechts an den Rand – dort, wo die dezente Leiste leuchtet. 2Do kommt raus und bleibt, solange die Maus drauf ist. Danach rollt es sich nach 3 Sekunden wieder ein." },
+    { icon: "🪟", title: "Eigene Fenster", text: "2dos und Notizen lassen sich über das Fenster-Symbol im Editor in einem eigenen, großen Fenster öffnen." },
     { icon: "📌", title: "Anheften", text: "Mit der Pinnnadel oben (oder Strg+P) bleibt das Panel offen." },
   ];
   return (
@@ -287,17 +309,44 @@ function WelcomeOverlay({ settings, onClose, onSettings }) {
 
 const OVERLAYS = ["settings", "help", "welcome"];
 
+// Anheften / Einfahren – sitzt in der Kopfleiste der App
+export function PanelControls() {
+  const panel = usePanel();
+  if (!panel) return null;
+  return (
+    <>
+      <button className={`btn-icon ${panel.pinned ? "btn-icon-active" : ""}`} onClick={panel.togglePin}
+        title={panel.pinned ? "Angeheftet – klicken zum Lösen (Strg+P)" : "Anheften: nicht automatisch einfahren (Strg+P)"}>
+        <PinIcon filled={panel.pinned} />
+      </button>
+      <button className="btn-icon" title="Einfahren (Esc)" onClick={panel.hide}><CollapseIcon /></button>
+    </>
+  );
+}
+
+// ── Eigenes Fenster (2do / Notiz) ───────────────────────────────────────────
+function DesktopWindowShell({ children }) {
+  useEffect(() => {
+    const cl = document.documentElement.classList;
+    cl.add("desktop", "desktop-window");
+    if (desktop.mica) cl.add("mica");
+    window.prompt = (message, defaultValue) => desktop.prompt(message, defaultValue);
+  }, []);
+  return children;
+}
+
 // ── Panel-Rahmen ────────────────────────────────────────────────────────────
 // Schwebendes Glas-Panel am rechten Bildschirmrand. Die Ein-/Ausfahr-Animation
 // läuft per CSS innerhalb des transparenten Fensters, damit nichts auf einen
 // Nachbarbildschirm "überläuft".
-export default function DesktopShell({ children }) {
+function DesktopPanelShell({ children }) {
   const [visible, setVisible] = useState(false);
   const [settings, setSettings] = useState(null);
   const [leavingMs, setLeavingMs] = useState(0);
   const [leavingKey, setLeavingKey] = useState(0);
   const [overlay, setOverlay] = useState(null); // settings | help | welcome
   const [resizing, setResizing] = useState(false);
+  const [appBars, setAppBars] = useState(0);
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
   const settingsRef = useRef(settings);
@@ -307,8 +356,20 @@ export default function DesktopShell({ children }) {
     desktop.setSettings({ pinned: !settingsRef.current?.pinned });
   }, []);
 
+  const panel = useMemo(() => ({
+    pinned: !!settings?.pinned,
+    toggleShortcut: settings?.toggleShortcut,
+    togglePin,
+    hide: () => desktop.hide(),
+    openOverlay: (o) => setOverlay(o),
+    registerAppBar: () => {
+      setAppBars((n) => n + 1);
+      return () => setAppBars((n) => n - 1);
+    },
+  }), [settings?.pinned, settings?.toggleShortcut, togglePin]);
+
   useEffect(() => {
-    document.documentElement.classList.add("desktop");
+    document.documentElement.classList.add("desktop", "desktop-panel");
     // Electron kennt kein window.prompt → eigenes Eingabefenster
     window.prompt = (message, defaultValue) => desktop.prompt(message, defaultValue);
 
@@ -329,7 +390,7 @@ export default function DesktopShell({ children }) {
         else sendAppCommand(cmd);
       }),
     ];
-    // Aus der App heraus (z. B. Einstellungen-Tab) Overlays öffnen
+    // Aus der App heraus (z. B. Profilmenü) Overlays öffnen
     const onAppCommand = (e) => { if (OVERLAYS.includes(e.detail?.type)) setOverlay(e.detail.type); };
     window.addEventListener("my2do:command", onAppCommand);
     return () => {
@@ -395,46 +456,40 @@ export default function DesktopShell({ children }) {
     desktop.resizeEnd();
   };
 
-  const pinned = !!settings?.pinned;
-
   return (
-    <div className={`dp-frame ${visible ? "dp-in" : "dp-out"} ${resizing ? "dp-resizing" : ""}`}>
-      {/* Titelleiste */}
-      <div className="dp-titlebar">
-        <div className="dp-logo">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-        </div>
-        <span className="text-[13px] font-bold text-slate-800 tracking-tight">2Do</span>
-        {settings?.toggleShortcut && (
-          <span className="hidden min-[400px]:inline-flex ml-1 opacity-70" title="Panel ein-/ausfahren">
-            <Keys accelerator={settings.toggleShortcut} small />
-          </span>
+    <PanelContext.Provider value={panel}>
+      <div className={`dp-frame ${visible ? "dp-in" : "dp-out"} ${resizing ? "dp-resizing" : ""}`}>
+        <div className="dp-scroll">{children}</div>
+
+        {/* Ohne Kopfleiste (z. B. Anmeldung): kleine schwebende Steuerung */}
+        {appBars === 0 && (
+          <div className="dp-floating-controls glass-strong">
+            <button className="btn-icon btn-icon-sm" title="Desktop-Einstellungen (Strg+,)" onClick={() => setOverlay("settings")}><SlidersIcon /></button>
+            <button className="btn-icon btn-icon-sm" title="Einfahren (Esc)" onClick={() => desktop.hide()}><CollapseIcon /></button>
+          </div>
         )}
-        <span className="flex-1" />
-        <button className="dp-iconbtn" title="Tastenkürzel (F1)" onClick={() => setOverlay((o) => (o === "help" ? null : "help"))}><KeyboardIcon /></button>
-        <button className="dp-iconbtn" title="Desktop-Einstellungen (Strg+,)" onClick={() => setOverlay((o) => (o === "settings" ? null : "settings"))}><SlidersIcon /></button>
-        <button className={`dp-iconbtn ${pinned ? "dp-iconbtn-active" : ""}`} onClick={togglePin}
-          title={pinned ? "Angeheftet – klicken zum Lösen (Strg+P)" : "Anheften: nicht automatisch einfahren (Strg+P)"}>
-          <PinIcon filled={pinned} />
-        </button>
-        <button className="dp-iconbtn" title="Einfahren (Esc)" onClick={() => desktop.hide()}><CollapseIcon /></button>
+
         {/* Countdown bis zum automatischen Einfahren */}
         {leavingMs > 0 && (
           <span key={leavingKey} className="dp-leaving" style={{ animationDuration: `${leavingMs}ms` }} />
         )}
+
+        {/* Breite ändern */}
+        <div className="dp-grip" title="Ziehen, um die Breite zu ändern"
+          onPointerDown={onGripDown} onPointerMove={onGripMove} onPointerUp={onGripUp} onPointerCancel={onGripUp} />
+
+        {settings && overlay === "settings" && <SettingsOverlay settings={settings} onClose={() => setOverlay(null)} />}
+        {settings && overlay === "help" && <HelpOverlay settings={settings} onClose={() => setOverlay(null)} />}
+        {settings && overlay === "welcome" && (
+          <WelcomeOverlay settings={settings} onClose={() => setOverlay(null)} onSettings={() => setOverlay("settings")} />
+        )}
       </div>
-
-      <div className="dp-scroll">{children}</div>
-
-      {/* Breite ändern */}
-      <div className="dp-grip" title="Ziehen, um die Breite zu ändern"
-        onPointerDown={onGripDown} onPointerMove={onGripMove} onPointerUp={onGripUp} onPointerCancel={onGripUp} />
-
-      {settings && overlay === "settings" && <SettingsOverlay settings={settings} onClose={() => setOverlay(null)} />}
-      {settings && overlay === "help" && <HelpOverlay settings={settings} onClose={() => setOverlay(null)} />}
-      {settings && overlay === "welcome" && (
-        <WelcomeOverlay settings={settings} onClose={() => setOverlay(null)} onSettings={() => setOverlay("settings")} />
-      )}
-    </div>
+    </PanelContext.Provider>
   );
+}
+
+export default function DesktopShell({ children }) {
+  return windowKind === "detached"
+    ? <DesktopWindowShell>{children}</DesktopWindowShell>
+    : <DesktopPanelShell>{children}</DesktopPanelShell>;
 }
