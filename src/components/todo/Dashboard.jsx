@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC } from "@/lib/firebaseAuth";
 import {
-  subscribeTodos, subscribeCategories, subscribeInbox,
+  subscribeTodos, subscribeCategories,
   subscribeMinimized, saveMinimizedDraft, removeMinimizedDraft,
 } from "@/lib/todoService";
 import QuickAdd from "./QuickAdd";
@@ -61,7 +61,8 @@ export default function Dashboard() {
   const { user, userProfile, isAdmin } = useFirebaseAuth();
   const [todos, setTodos] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [inboxCount, setInboxCount] = useState(0);
+  // Gesendete, noch nicht angenommene geteilte 2dos
+  const [pendingShares, setPendingShares] = useState([]);
   const [activeTab, setActiveTab] = useState(0);
   const [selectedTodo, setSelectedTodo] = useState(null);
   // Minimierte Editoren: ungespeicherte Entwürfe — in Firestore synchronisiert,
@@ -79,11 +80,10 @@ export default function Dashboard() {
   const [showAI, setShowAI] = useState(false);
 
   useEffect(() => {
-    const unsub1 = subscribeTodos(user.uid, setTodos);
+    const unsub1 = subscribeTodos(user.uid, setTodos, setPendingShares);
     const unsub2 = subscribeCategories(user.uid, setCategories);
-    const unsub3 = subscribeInbox(user.uid, (items) => setInboxCount(items.length));
-    const unsub4 = subscribeMinimized(user.uid, setMinimizedRaw);
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    const unsub3 = subscribeMinimized(user.uid, setMinimizedRaw);
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [user.uid]);
 
   // Minimierte Entwürfe mit dem zugehörigen Todo anreichern (für Chips + Wiederöffnen)
@@ -201,7 +201,7 @@ export default function Dashboard() {
     { label: "Aufgaben" },
     { label: "Notizen" },
     { label: "Übersicht" },
-    { label: "Inbox", badge: inboxCount },
+    { label: "Inbox", badge: pendingShares.length },
     ...(isAdmin ? [{ label: "Admin" }] : []),
     { label: "Einstell." },
   ];
@@ -347,7 +347,7 @@ export default function Dashboard() {
 
           {activeTab === 1 && <NotesPanel />}
           {activeTab === 2 && <OverviewPanel todos={todos} />}
-          {activeTab === 3 && <InboxPanel />}
+          {activeTab === 3 && <InboxPanel items={pendingShares} />}
           {activeTab === 4 && isAdmin && <AdminPanel />}
           {activeTab === (isAdmin ? 5 : 4) && <SettingsPanel categories={categories} todos={todos} />}
         </div>

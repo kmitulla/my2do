@@ -4,6 +4,7 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import FavoriteButton from "./FavoriteButton";
+import SharedBadge, { notifyLocked } from "./SharedBadge";
 
 const PRIO_STYLES = {
   A: { bar: "bg-red-500", badge: "bg-red-100/70 text-red-600 border-red-200/70", label: "Prio A" },
@@ -30,14 +31,12 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
   const isOverdue = todo.deadline && !["erledigt"].includes(todo.status) &&
     (todo.deadline.toDate ? todo.deadline.toDate() : new Date(todo.deadline)) < new Date();
 
-  const toggleDone = async (e) => {
+  const toggleDone = (e) => {
     e.stopPropagation();
-    if (todo.status === "erledigt") {
-      const prev = todo.previousStatus || "offen";
-      await updateTodo(user.uid, todo.id, { status: prev, previousStatus: null });
-    } else {
-      await updateTodo(user.uid, todo.id, { status: "erledigt", previousStatus: todo.status });
-    }
+    const ok = todo.status === "erledigt"
+      ? updateTodo(user.uid, todo.id, { status: todo.previousStatus || "offen", previousStatus: null })
+      : updateTodo(user.uid, todo.id, { status: "erledigt", previousStatus: todo.status });
+    if (!ok) notifyLocked(todo);
   };
 
   if (view === "grid") {
@@ -77,6 +76,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
               <div className="flex flex-wrap gap-1 mt-2">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>
                 {todo.status && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${STATUS_STYLES[todo.status] || STATUS_STYLES.offen}`}>{todo.status}</span>}
+                <SharedBadge todo={todo} />
                 {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
                   <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100/60 border border-indigo-200/50 text-indigo-500">#{tag}</span>
                 ))}
@@ -126,6 +126,7 @@ export default function TodoCard({ todo, view, onClick, onDelete }) {
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           <span className={`text-[10px] px-1.5 py-0.5 rounded-md border font-medium ${prio.badge}`}>{prio.label}</span>
           {todo.status && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${STATUS_STYLES[todo.status] || STATUS_STYLES.offen}`}>{todo.status}</span>}
+          <SharedBadge todo={todo} />
           {(todo.tags || (todo.category ? [todo.category] : [])).map((tag) => (
             <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100/60 border border-indigo-200/50 text-indigo-500">#{tag}</span>
           ))}

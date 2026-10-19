@@ -3,6 +3,7 @@ import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { updateTodo, deleteTodo, restoreTodo } from "@/lib/todoService";
 import useConfirmReset from "@/hooks/useConfirmReset";
 import FavoriteButton from "./FavoriteButton";
+import SharedBadge, { notifyLocked } from "./SharedBadge";
 
 const PRIO_DOT = { A: "#f87171", B: "#fbbf24", C: "#4ade80" };
 
@@ -223,7 +224,9 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
       const abs = Math.abs(d);
       let picked = LEFT_STAGES[0];
       for (const s of LEFT_STAGES) { if (abs >= s.threshold) picked = s; }
-      setConfirmed({ action: picked.action, label: picked.label, confirmLabel: picked.confirmLabel, bg: picked.bg, bg2: picked.bg2, Icon: picked.Icon });
+      // Geteilte 2dos werden beim Löschen nur für einen selbst entfernt
+      const confirmLabel = picked.action === "delete" && todo.sharedId ? "Für dich entfernen?" : picked.confirmLabel;
+      setConfirmed({ action: picked.action, label: picked.label, confirmLabel, bg: picked.bg, bg2: picked.bg2, Icon: picked.Icon });
       setOffsetX(0);
     } else if (d > STEP_W * 0.7) {
       const stageIdx = Math.min(Math.floor(d / STEP_W), WIEDERVORLAGE_STEPS.length - 1);
@@ -243,7 +246,7 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
     }
     lockedStage.current = -1;
     dx.current = 0;
-  }, [confirmed, showBurst, user.uid, todo.id]);
+  }, [confirmed, showBurst, user.uid, todo.id, todo.sharedId]);
 
   // Touch events
   const onTouchStart = (e) => handlePointerStart(e.touches[0].clientX, e.touches[0].clientY);
@@ -271,15 +274,15 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
     setConfirmed(null);
     const prevStatus = todo.status || "offen";
     if (action === "done") {
+      if (!updateTodo(user.uid, todo.id, { status: "erledigt" })) { notifyLocked(todo); return; }
       setShowBurst("done");
-      await updateTodo(user.uid, todo.id, { status: "erledigt" });
       onAction?.({
         label: `„${todo.title}" erledigt`,
         undo: () => updateTodo(user.uid, todo.id, { status: prevStatus === "erledigt" ? "offen" : prevStatus }),
       });
     } else if (action === "archive") {
+      if (!updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" })) { notifyLocked(todo); return; }
       setShowBurst("archive");
-      await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
       onAction?.({
         label: `„${todo.title}" archiviert`,
         undo: () => updateTodo(user.uid, todo.id, { archived: false, status: prevStatus === "erledigt" ? "offen" : prevStatus }),
@@ -289,7 +292,7 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
       const { id: _id, ...snapshot } = todo;
       await deleteTodo(user.uid, todo.id);
       onAction?.({
-        label: `„${todo.title}" gelöscht`,
+        label: todo.sharedId ? `„${todo.title}" für dich entfernt` : `„${todo.title}" gelöscht`,
         undo: () => restoreTodo(user.uid, todo.id, snapshot),
       });
     } else if (action === "wiedervorlage7") {
@@ -426,6 +429,8 @@ export default function SwipeableTodoCard({ todo, onClick, onAction }) {
             )}
           </div>
         </div>
+
+        <SharedBadge todo={todo} />
 
         <FavoriteButton todo={todo} className="w-7 h-7 -mx-1 rounded-full" />
 

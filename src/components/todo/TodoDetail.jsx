@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { updateTodo, deleteTodo, addCategory, sendTodoToUsers, getAllUsers } from "@/lib/todoService";
+import {
+  updateTodo, deleteTodo, addCategory, shareTodo, getAllUsers,
+  subscribeSharedTodo, acquireEditLock, refreshEditLock, releaseEditLock,
+  lockedByOther, splitSharedData, LOCK_HEARTBEAT_MS,
+} from "@/lib/todoService";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { format } from "date-fns";
 import RichEditor from "./RichEditor";
@@ -8,6 +12,7 @@ import useConfirmReset from "@/hooks/useConfirmReset";
 import SyncIndicator from "./SyncIndicator";
 import TimestampInfo from "./TimestampInfo";
 import FavoriteButton from "./FavoriteButton";
+import { UsersIcon, LockIcon } from "./SharedBadge";
 
 const STATUSES = ["offen", "in Arbeit", "wartend", "erledigt"];
 const PRIOS = ["A", "B", "C"];
@@ -54,13 +59,30 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   const [showNewCat, setShowNewCat] = useState(false);
   const [exportingWord, setExportingWord] = useState(false);
 
-  // Share state
+  // Senden / Mitbearbeiter
+  const myName = userProfile?.displayName || user.displayName || user.email;
+  const [sharedId, setSharedId] = useState(todo.sharedId || null);
   const [showShare, setShowShare] = useState(false);
-  const [allUsers, setAllUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState(null);
+  const [userSearch, setUserSearch] = useState("");
   const [selectedUids, setSelectedUids] = useState([]);
-  const [collaborate, setCollaborate] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [shareSuccess, setShareSuccess] = useState(false);
+  // null | "done" | "queued"
+  const [shareResult, setShareResult] = useState(null);
+
+  // Geteilte 2dos: Live-Stand + Bearbeitungssperre.
+  // lockState: none (privat) | pending | mine | other (jemand anderes
+  // bearbeitet → gemeinsame Felder gesperrt) | offline (keine Sperre möglich)
+  const [live, setLive] = useState(todo.sharedId ? todo : null);
+  const [lockState, setLockState] = useState(() =>
+    !todo.sharedId ? "none" : lockedByOther(todo) ? "other" : "pending");
+  const liveRef = useRef(live);
+  const lockStateRef = useRef(lockState);
+  const acquireRef = useRef(null);
+  liveRef.current = live;
+  lockStateRef.current = lockState;
+  const commonLocked = lockState === "other";
+  const otherLock = commonLocked ? lockedByOther(live) || live?.editLock : null;
 
   // Track if dirty (for auto-save vs X close)
   const isDirtyRef = useRef(false);
@@ -90,6 +112,88 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       document.removeEventListener("touchmove", handler);
     };
   }, []);
+
+  // Sperre holen, per Heartbeat halten, beim Schließen/Minimieren freigeben.
+  // Ist das 2do gerade gesperrt, wird automatisch übernommen, sobald es frei ist.
+  useEffect(() => {
+    if (!sharedId) return;
+    let cancelled = false;
+    let holding = false;
+    let busy = false;
+
+    const tryAcquire = async () => {
+      if (busy || cancelled) return;
+      busy = true;
+      try {
+        const res = await acquireEditLock(sharedId, user.uid, myName);
+        if (cancelled) {
+          if (res.ok) releaseEditLock(sharedId);
+          return;
+        }
+        holding = res.ok;
+        setLockState(res.ok ? "mine" : res.lock ? "other" : "offline");
+      } catch {
+        // offline / Timeout: ohne Sperre weiterarbeiten, außer der Cache
+        // kennt eine aktive fremde Sperre
+        if (!cancelled) setLockState(lockedByOther(liveRef.current) ? "other" : "offline");
+      } finally {
+        busy = false;
+      }
+    };
+    acquireRef.current = tryAcquire;
+
+    const unsub = subscribeSharedTodo(sharedId, (data) => {
+      if (cancelled || !data) return;
+      setLive(data);
+      // Sperre verloren (z. B. nach Standby) → ab jetzt nur lesen
+      if (lockStateRef.current === "mine" && lockedByOther(data)) {
+        holding = false;
+        setLockState("other");
+      } else if (lockStateRef.current === "other" && !lockedByOther(data)) {
+        tryAcquire();
+      }
+    });
+    tryAcquire();
+
+    // Alle 5 s prüfen: eigene Sperre regelmäßig erneuern bzw. – falls keine
+    // gehalten wird – neu versuchen (fremde Sperre abgelaufen, wieder online)
+    let lastBeat = Date.now();
+    const heartbeat = setInterval(async () => {
+      if (holding) {
+        if (Date.now() - lastBeat < LOCK_HEARTBEAT_MS) return;
+        lastBeat = Date.now();
+        try {
+          if (!(await refreshEditLock(sharedId)) && !cancelled) {
+            holding = false;
+            setLockState(lockedByOther(liveRef.current) ? "other" : "offline");
+          }
+        } catch { /* offline – Sperre verfällt ggf., wird neu geholt */ }
+      } else if (!lockedByOther(liveRef.current)) {
+        lastBeat = Date.now();
+        tryAcquire();
+      }
+    }, 5000);
+
+    const onUnload = () => { if (holding) releaseEditLock(sharedId); };
+    window.addEventListener("pagehide", onUnload);
+
+    return () => {
+      cancelled = true;
+      acquireRef.current = null;
+      clearInterval(heartbeat);
+      window.removeEventListener("pagehide", onUnload);
+      unsub();
+      if (holding) releaseEditLock(sharedId);
+    };
+  }, [sharedId, user.uid]);
+
+  // Während jemand anderes bearbeitet: gemeinsame Felder live mitlaufen lassen,
+  // damit man nach der Freigabe auf dem neuesten Stand weiterarbeitet
+  useEffect(() => {
+    if (lockState !== "other" || !live) return;
+    const { common } = splitSharedData(live);
+    setForm((f) => ({ ...f, ...common }));
+  }, [live, lockState]);
 
   useEffect(() => {
     if (initialDraft) {
@@ -121,19 +225,26 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     return data;
   };
 
+  // Gesperrt → nur die persönlichen Felder (Tags, Wiedervorlage) speichern
+  const persist = () => {
+    const ok = updateTodo(user.uid, todo.id, buildSaveData(), { personalOnly: commonLocked });
+    if (!ok) alert(`${lockedByOther(liveRef.current)?.name || "Jemand"} bearbeitet dieses 2do gerade – deine Änderungen an Titel, Status & Co. konnten nicht gespeichert werden.`);
+    return ok;
+  };
+
   // Speichern & schließen (bisheriges Verhalten)
   const save = async () => {
     setSaving(true);
-    await updateTodo(user.uid, todo.id, buildSaveData());
+    const ok = persist();
     setSaving(false);
-    onClose();
+    if (ok) onClose();
   };
 
   // Speichern ohne zu schließen
   const saveOnly = async () => {
     if (savingStay || saving) return;
     setSavingStay(true);
-    await updateTodo(user.uid, todo.id, buildSaveData());
+    persist();
     isDirtyRef.current = false;
     setLastUpdated(new Date());
     setSavingStay(false);
@@ -168,8 +279,9 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   };
 
   const handleArchive = async () => {
+    if (commonLocked) return;
     if (!confirmArchive) { setConfirmArchive(true); return; }
-    await updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" });
+    if (!updateTodo(user.uid, todo.id, { archived: true, status: "erledigt" })) return;
     onClose();
   };
 
@@ -256,30 +368,95 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     }
   };
 
-  const loadUsers = async () => {
-    const users = await getAllUsers();
-    setAllUsers(users.filter((u) => u.id !== user.uid));
+  const openShare = async () => {
     setShowShare(true);
+    setShareResult(null);
+    if (allUsers) return;
+    try {
+      const users = await getAllUsers();
+      setAllUsers(users
+        .filter((u) => u.id !== user.uid)
+        .sort((a, b) => (a.displayName || a.email || "").localeCompare(b.displayName || b.email || "", "de")));
+    } catch (err) {
+      console.error("User laden fehlgeschlagen:", err);
+      setAllUsers([]);
+    }
+  };
+
+  const closeShare = () => {
+    setShowShare(false);
+    setSelectedUids([]);
+    setUserSearch("");
   };
 
   const toggleUser = (uid) => {
     setSelectedUids((prev) => prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid]);
   };
 
+  const members = live?.collaborators || [];
+  const shareCandidates = (allUsers || []).filter((u) => {
+    if (members.includes(u.id)) return false;
+    const q = userSearch.trim().toLowerCase();
+    return !q || (u.displayName || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q);
+  });
+
+  // Senden = aktuellen Stand speichern + Empfänger als Mitbearbeiter eintragen
   const handleShare = async () => {
-    if (selectedUids.length === 0) return;
+    if (selectedUids.length === 0 || sharing) return;
     setSharing(true);
     try {
-      await sendTodoToUsers(user.uid, userProfile?.displayName || user.email, form, selectedUids, collaborate);
-      setShareSuccess(true);
-      setTimeout(() => { setShareSuccess(false); setShowShare(false); setSelectedUids([]); }, 1500);
+      const data = { ...buildSaveData(), id: todo.id, createdAt: todo.createdAt };
+      if (isDirtyRef.current) {
+        updateTodo(user.uid, todo.id, data, { personalOnly: commonLocked });
+        isDirtyRef.current = false;
+      }
+      const recipients = selectedUids.map((uid) => {
+        const u = allUsers.find((x) => x.id === uid);
+        return { uid, name: u?.displayName || u?.email || "Unbekannt" };
+      });
+      const result = await shareTodo(user.uid, myName, data, recipients);
+      if (!sharedId) {
+        setLive({ ...data, collaborators: [user.uid, ...selectedUids], sharedBy: user.uid,
+          memberNames: { [user.uid]: myName, ...Object.fromEntries(recipients.map((r) => [r.uid, r.name])) } });
+        setLockState("pending");
+        setSharedId(todo.id);
+      }
+      setShareResult(result);
+      setSelectedUids([]);
+      setUserSearch("");
+      setTimeout(() => { setShowShare(false); setShareResult(null); }, 1800);
     } catch (err) {
-      console.error("Share failed:", err);
-      alert("Fehler beim Senden: " + err.message);
+      console.error("Senden fehlgeschlagen:", err);
+      alert("Fehler beim Senden: " + (err?.message || err));
     } finally {
       setSharing(false);
     }
   };
+
+  // Tastenkürzel im Editor: Strg+S speichern, Strg+Enter speichern & schließen,
+  // Esc schließen (ungespeicherte Änderungen werden vorher gespeichert)
+  const keyActionsRef = useRef({});
+  keyActionsRef.current = { saveOnly, save, showShare, closeShare };
+  useEffect(() => {
+    const onKey = (e) => {
+      const a = keyActionsRef.current;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        a.saveOnly();
+      } else if (mod && e.key === "Enter") {
+        e.preventDefault();
+        a.save();
+      } else if (e.key === "Escape" && !e.defaultPrevented) {
+        e.preventDefault();
+        if (a.showShare) a.closeShare();
+        else if (isDirtyRef.current) a.save();
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return (
     <div className="w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl glass-strong rounded-t-[28px] sm:rounded-[28px] max-h-[95vh] flex flex-col mx-auto"
@@ -293,8 +470,15 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               <h2 className="text-base font-semibold text-slate-800 truncate">Notiz bearbeiten</h2>
               <SyncIndicator />
             </div>
-            <TimestampInfo createdAt={todo.createdAt} updatedAt={lastUpdated} className="mt-0.5" />
+            <TimestampInfo createdAt={todo.createdAt} updatedAt={live?.updatedAt || lastUpdated} className="mt-0.5" />
           </div>
+          <button onClick={showShare ? closeShare : openShare}
+            title={sharedId ? "Weitere Mitbearbeiter hinzufügen" : "An andere senden (als Mitbearbeiter)"}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+              showShare ? "bg-indigo-500 text-white shadow-md" : sharedId ? "glass-chip text-sky-600" : "glass-chip text-slate-500"
+            }`}>
+            <UsersIcon size={14} />
+          </button>
           <FavoriteButton todo={todo} favorite={favorite} onToggled={setFavorite}
             size={14} className="w-8 h-8 rounded-full glass-chip" />
           {onMinimize && (
@@ -311,8 +495,131 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-5 space-y-4" style={{ overflowX: "hidden", maxWidth: "100%" }}>
 
+          {/* Mitbearbeiter + Sperrstatus (nur geteilte 2dos) */}
+          {sharedId && (
+            <div className="rounded-2xl bg-sky-50/70 border border-sky-100 px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sky-500 flex-shrink-0"><UsersIcon size={13} /></span>
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Mitbearbeiter</span>
+                <span className="flex-1" />
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                  lockState === "mine" ? "bg-emerald-100 text-emerald-700"
+                    : lockState === "other" ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-100 text-slate-500"
+                }`}>
+                  {lockState === "mine" ? "Du bearbeitest" : lockState === "other" ? "Gesperrt" : lockState === "offline" ? "Offline" : "…"}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {members.map((uid) => {
+                  const name = uid === user.uid ? "Du" : (live?.memberNames?.[uid] || "Unbekannt");
+                  const editing = otherLock?.uid === uid || (uid === user.uid && lockState === "mine");
+                  return (
+                    <span key={uid} title={live?.sharedBy === uid ? "Hat das 2do gesendet" : ""}
+                      className={`inline-flex items-center gap-1.5 pl-0.5 pr-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                        editing ? "bg-white border-emerald-300 text-emerald-700" : "bg-white/80 border-slate-200 text-slate-600"
+                      }`}>
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
+                        uid === user.uid ? "bg-gradient-to-br from-blue-400 to-indigo-500" : "bg-gradient-to-br from-sky-400 to-cyan-500"
+                      }`}>{name[0]?.toUpperCase()}</span>
+                      {name}
+                      {live?.sharedBy === uid && <span className="text-amber-500" aria-hidden>★</span>}
+                      {editing && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                    </span>
+                  );
+                })}
+                <button onClick={openShare}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
+                  + Hinzufügen
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2 leading-snug">
+                Gemeinsam: Titel, Beschreibung, Status, Priorität, Deadline &amp; Archiv · Nur für dich: Tags, Wiedervorlage &amp; Favorit
+              </p>
+            </div>
+          )}
+
+          {/* Gesperrt-Hinweis */}
+          {commonLocked && (
+            <div className="flex items-start gap-2.5 rounded-2xl bg-amber-50/90 border border-amber-200 px-3 py-2.5">
+              <span className="text-amber-600 mt-0.5 flex-shrink-0"><LockIcon size={14} /></span>
+              <div className="text-xs text-amber-800 leading-snug">
+                <b>{otherLock?.name || "Jemand"}</b> bearbeitet dieses 2do gerade.
+                Titel, Beschreibung, Status &amp; Co. sind solange gesperrt und laufen live mit –
+                Tags und Wiedervorlage kannst du trotzdem ändern. Sobald frei, kannst du automatisch weiterarbeiten.
+              </div>
+            </div>
+          )}
+
+          {/* Senden an andere User */}
+          {showShare && (
+            <div className="rounded-2xl bg-white/85 border border-indigo-200 shadow-sm p-3 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-indigo-500"><UsersIcon size={14} /></span>
+                <span className="text-sm font-semibold text-slate-700 flex-1">
+                  {sharedId ? "Mitbearbeiter hinzufügen" : "An andere senden"}
+                </span>
+                <button onClick={closeShare} title="Schließen (Esc)"
+                  className="w-6 h-6 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              {shareResult ? (
+                <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-xs text-emerald-700 font-medium">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  {shareResult === "done"
+                    ? "Gesendet! Erscheint bei den Empfängern in der Inbox."
+                    : "Gespeichert – wird gesendet, sobald du wieder online bist."}
+                </div>
+              ) : (
+                <>
+                  <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} autoFocus
+                    placeholder="Name oder E-Mail suchen…"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  <div className="max-h-48 overflow-y-auto -mx-1 px-1 space-y-0.5">
+                    {allUsers === null && <p className="text-xs text-slate-400 py-2 text-center">Lade Personen…</p>}
+                    {allUsers !== null && shareCandidates.length === 0 && (
+                      <p className="text-xs text-slate-400 py-2 text-center">Keine weiteren Personen gefunden.</p>
+                    )}
+                    {shareCandidates.map((u) => {
+                      const sel = selectedUids.includes(u.id);
+                      const name = u.displayName || u.email || "Unbekannt";
+                      return (
+                        <button key={u.id} type="button" onClick={() => toggleUser(u.id)}
+                          className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-left transition-all ${
+                            sel ? "bg-indigo-50 ring-1 ring-indigo-300" : "hover:bg-slate-50"
+                          }`}>
+                          <span className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
+                            {name[0].toUpperCase()}
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-xs font-semibold text-slate-700 truncate">{name}</span>
+                            {u.email && u.email !== name && <span className="block text-[10px] text-slate-400 truncate">{u.email}</span>}
+                          </span>
+                          <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${
+                            sel ? "bg-indigo-500 border-indigo-500 text-white" : "border-slate-300"
+                          }`}>
+                            {sel && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    Empfänger werden <b>Mitbearbeiter</b>: Titel, Beschreibung, Status, Priorität, Deadline &amp; Archiv sind gemeinsam.
+                    Tags, Wiedervorlage &amp; Favoriten setzt jeder für sich.
+                  </p>
+                  <button onClick={handleShare} disabled={selectedUids.length === 0 || sharing}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-50">
+                    {sharing ? "Sende…" : selectedUids.length ? `Senden an ${selectedUids.length} ${selectedUids.length === 1 ? "Person" : "Personen"}` : "Personen auswählen"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Status - compact chips row at top */}
-          <div>
+          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</label>
             <div className="flex gap-1.5 flex-wrap">
               {STATUSES.map((s) => (
@@ -333,7 +640,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
                 className="w-full pl-7 pr-3 py-2 rounded-xl bg-violet-50/70 border border-violet-200 text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400/50"
               />
             </div>
-          </div>
+          </fieldset>
 
           {/* Wiedervorlage — quick buttons + date picker */}
           <div>
@@ -348,14 +655,14 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
           </div>
 
           {/* Title */}
-          <div>
+          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-70">
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Titel *</label>
             <input value={form.title || ""} onChange={(e) => set("title", e.target.value)}
               className="w-full px-4 py-2.5 rounded-2xl glass-input text-slate-800 text-[15px]" />
-          </div>
+          </fieldset>
 
           {/* Description - rich editor */}
-          <div>
+          <div className={commonLocked ? "opacity-80" : ""}>
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Beschreibung</label>
             <RichEditor
               ref={richEditorRef}
@@ -363,11 +670,12 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               onChange={(v) => set("description", v)}
               placeholder="Beschreibung eingeben..."
               minHeight={200}
+              readOnly={commonLocked}
             />
           </div>
 
           {/* Prio */}
-          <div>
+          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Priorität</label>
             <div className="flex gap-2">
               {PRIOS.map((p) => (
@@ -377,7 +685,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
                 </button>
               ))}
             </div>
-          </div>
+          </fieldset>
 
           {/* Tags */}
           <div>
@@ -424,7 +732,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
           </div>
 
           {/* Deadline — quick buttons + date picker */}
-          <div>
+          <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               Deadline
@@ -434,7 +742,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               onChange={(v) => set("deadline", v)}
               withTime
             />
-          </div>
+          </fieldset>
 
           {/* Email + Calendar - compact side by side */}
           <div className="border-t border-slate-100 pt-4">
@@ -469,8 +777,6 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
             <p className="text-[10px] text-slate-400 mt-1 text-center">E-Mail: Titel als Betreff · Kalender: .ics öffnet Outlook / iPhone-Kalender · Word: .docx mit Titel &amp; Details</p>
           </div>
 
-          {/* Share Section — temporarily hidden */}
-          {/* <div className="border-t border-slate-100 pt-4"> ... </div> */}
         </div>
 
         {/* Footer */}
@@ -482,15 +788,17 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
           </button>
-          <button ref={archiveBtnRef} onClick={handleArchive}
-            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmArchive ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-amber-50/70 border border-amber-200 text-amber-600"}`}>
+          <button ref={archiveBtnRef} onClick={handleArchive} disabled={commonLocked}
+            title={commonLocked ? "Gesperrt, solange jemand anderes bearbeitet" : sharedId ? "Archiviert das 2do für alle Mitbearbeiter" : "Archivieren"}
+            className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all disabled:opacity-50 ${confirmArchive ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30" : "bg-amber-50/70 border border-amber-200 text-amber-600"}`}>
             {confirmArchive ? "Wirklich?" : "Archivieren"}
           </button>
           <button ref={deleteBtnRef} onClick={handleDelete}
+            title={sharedId ? "Nur für dich entfernen – die anderen Mitbearbeiter behalten das 2do" : "Löschen"}
             className={`flex-1 py-2.5 rounded-2xl text-sm font-medium transition-all ${confirmDelete ? "bg-red-500 text-white shadow-lg shadow-red-500/30" : "bg-red-50/70 border border-red-200 text-red-600"}`}>
-            {confirmDelete ? "Wirklich?" : "Löschen"}
+            {confirmDelete ? "Wirklich?" : sharedId ? "Entfernen" : "Löschen"}
           </button>
-          <button onClick={saveOnly} disabled={saving || savingStay} title="Speichern (offen lassen)"
+          <button onClick={saveOnly} disabled={saving || savingStay} title="Speichern (offen lassen) · Strg+S"
             className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-60 ${
               savedFlash
                 ? "bg-emerald-500 text-white shadow-md"
@@ -506,7 +814,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               </svg>
             )}
           </button>
-          <button onClick={save} disabled={saving || savingStay}
+          <button onClick={save} disabled={saving || savingStay} title="Speichern & schließen · Strg+Enter"
             className="flex-1 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-60">
             {saving ? "..." : "Speichern"}
           </button>
