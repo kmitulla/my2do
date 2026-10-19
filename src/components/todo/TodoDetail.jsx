@@ -405,7 +405,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     if (selectedUids.length === 0 || sharing) return;
     setSharing(true);
     try {
-      const data = { ...buildSaveData(), id: todo.id, createdAt: todo.createdAt };
+      const data = { ...buildSaveData(), id: todo.id };
+      if (todo.createdAt) data.createdAt = todo.createdAt;
       if (isDirtyRef.current) {
         updateTodo(user.uid, todo.id, data, { personalOnly: commonLocked });
         isDirtyRef.current = false;

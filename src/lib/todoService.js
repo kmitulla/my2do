@@ -60,7 +60,10 @@ export const addTodo = (uid, data) => {
 export const updateTodo = (uid, id, data, { personalOnly = false } = {}) => {
   const shared = sharedCache.get(id);
   if (!shared) {
-    fireWrite(updateDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "updateTodo");
+    // undefined lehnt Firestore synchron ab (z. B. createdAt eines gerade
+    // erst angelegten 2dos, das noch nicht vom Server zurückkam)
+    const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+    fireWrite(updateDoc(doc(db, "users", uid, "todos", id), { ...clean, updatedAt: serverTimestamp() }), "updateTodo");
     return true;
   }
   const { personal, common } = splitSharedData(data);
