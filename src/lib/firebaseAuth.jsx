@@ -76,7 +76,10 @@ export const FirebaseAuthProvider = ({ children }) => {
             role: "user",
             createdAt: serverTimestamp(),
           };
-          setDoc(doc(db, "users", firebaseUser.uid), profile).catch(() => {});
+          // Nur anlegen, wenn sicher feststeht, dass es noch keins gibt –
+          // offline (Lesefehler) würde sonst ein bestehendes Profil samt
+          // Rolle überschrieben
+          if (profileDoc) setDoc(doc(db, "users", firebaseUser.uid), profile).catch(() => {});
           setUserProfile(profile);
         }
       } else {

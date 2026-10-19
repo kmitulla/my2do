@@ -30,7 +30,7 @@ export default function AdminPanel() {
       console.error("fetchUsers failed:", err);
       setListError(
         err.code === "permission-denied"
-          ? "Keine Berechtigung zum Laden der User-Liste. Die Firestore-Rules müssen aktualisiert werden (siehe src/firestore.rules, Version 0.3 — in der Firebase Console einspielen)."
+          ? "Keine Berechtigung zum Laden der User-Liste. Die Firestore-Rules müssen aktualisiert werden (siehe src/firestore.rules, Version 0.4 — in der Firebase Console einspielen)."
           : "Fehler beim Laden: " + (err.message || err)
       );
     }
