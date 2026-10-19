@@ -110,6 +110,9 @@
     background: radial-gradient(circle at 50% 50%, rgba(244,114,182,0.22), rgba(244,114,182,0) 70%);
     animation-delay: -5s;
   }
+  @media (prefers-reduced-motion: reduce) {
+    .liquid-blob { animation: none; }
+  }
   @keyframes liquid-float {
     0%   { transform: translate3d(0, 0, 0) scale(1); }
     50%  { transform: translate3d(3vw, 2vh, 0) scale(1.06); }
@@ -241,3 +244,219 @@
       0 0 0 3px rgba(99,102,241,0.25);
   }
 }
+/* ────────────────────────────────────────────────────────────────────────────
+   Windows-Desktop-App (Electron, desktop/) – schwebendes Seiten-Panel.
+   Das Fenster ist transparent; .dp-frame ist das sichtbare Panel. Abstände
+   müssen zu FRAME_LEFT/FRAME_RIGHT in desktop/main.js passen.
+   ──────────────────────────────────────────────────────────────────────────── */
+html.desktop,
+html.desktop body {
+  background: transparent !important;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Segoe UI Variable Text", "Segoe UI", 'Inter', system-ui, sans-serif;
+}
+html.desktop #root { height: 100%; }
+/* Seitenleiste ist oft stundenlang offen: Hintergrund-Blobs nicht endlos
+   animieren (spart dauerhaft GPU/CPU), statisch sehen sie genauso aus */
+html.desktop .liquid-blob { animation: none; will-change: auto; }
+
+.dp-frame {
+  position: fixed;
+  top: 10px; bottom: 10px; left: 18px; right: 10px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: linear-gradient(165deg, rgba(248,250,255,0.98), rgba(236,240,255,0.97));
+  box-shadow:
+    0 30px 60px -22px rgba(30,41,99,0.5),
+    0 10px 24px -14px rgba(30,41,99,0.35),
+    inset 0 0 0 1px rgba(255,255,255,0.75);
+  outline: 1px solid rgba(99,102,241,0.16);
+  transform-origin: 100% 50%;
+  will-change: transform, opacity, filter;
+}
+/* Akzent-Kante links – leuchtet, solange das Panel offen ist */
+.dp-frame::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 18%; bottom: 18%;
+  width: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(99,102,241,0), #6366f1 30%, #38bdf8 70%, rgba(56,189,248,0));
+  opacity: 0.55;
+  z-index: 47;
+  pointer-events: none;
+}
+.dp-in {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  filter: none;
+  transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 260ms ease-out;
+}
+/* "Einrollen": nach rechts raus, leicht gedreht und weichgezeichnet */
+.dp-out {
+  transform: perspective(1400px) translate3d(calc(100% + 30px), 0, 0) rotateY(-18deg) scale(0.96);
+  opacity: 0;
+  filter: blur(10px) saturate(1.3);
+  pointer-events: none;
+  transition: transform 280ms cubic-bezier(0.7, 0, 0.84, 0), opacity 260ms ease-in, filter 260ms ease-in;
+}
+.dp-resizing, .dp-resizing * { cursor: ew-resize !important; user-select: none; }
+
+.dp-titlebar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 40px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,255,255,0.5));
+  border-bottom: 1px solid rgba(148,163,184,0.18);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+.dp-logo {
+  width: 22px; height: 22px;
+  border-radius: 8px;
+  margin-right: 4px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  box-shadow: 0 4px 10px -4px rgba(79,70,229,0.7);
+}
+.dp-iconbtn {
+  width: 30px; height: 30px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #64748b;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.dp-iconbtn:hover { background: rgba(99,102,241,0.1); color: #4f46e5; }
+.dp-iconbtn:active { transform: scale(0.92); }
+.dp-iconbtn-active { background: rgba(99,102,241,0.14); color: #4f46e5; }
+.dp-leaving {
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, #6366f1, #38bdf8);
+  transform-origin: left center;
+  animation-name: dp-leave;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes dp-leave { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+.dp-scroll {
+  position: absolute;
+  top: 40px; left: 0; right: 0; bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+html.desktop .dp-scroll .min-h-screen { min-height: 100%; }
+
+.dp-grip {
+  position: absolute;
+  left: 0; top: 40px; bottom: 0;
+  width: 7px;
+  z-index: 46;
+  cursor: ew-resize;
+}
+.dp-grip::after {
+  content: "";
+  position: absolute;
+  left: 2px; top: 50%;
+  width: 4px; height: 44px;
+  margin-top: -22px;
+  border-radius: 9999px;
+  background: rgba(99,102,241,0.45);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.dp-grip:hover::after, .dp-resizing .dp-grip::after { opacity: 1; }
+
+.dp-kbd {
+  display: inline-flex; align-items: center;
+  font: 600 11px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #334155;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #fff, #f1f5f9);
+  border: 1px solid rgba(148,163,184,0.5);
+  box-shadow: 0 1px 0 rgba(148,163,184,0.55);
+  white-space: nowrap;
+}
+.dp-kbd-sm { font-size: 10px; padding: 3px 5px; border-radius: 6px; }
+
+.dp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  background: rgba(15,23,42,0.16);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: dp-fade 180ms ease-out;
+}
+.dp-sheet {
+  flex: 1;
+  margin: 46px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: 20px;
+  background: linear-gradient(165deg, rgba(250,251,255,0.98), rgba(238,242,255,0.98));
+  box-shadow: 0 24px 50px -20px rgba(30,41,99,0.45), inset 0 0 0 1px rgba(255,255,255,0.8);
+  animation: dp-sheet-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes dp-fade { from { opacity: 0; } }
+@keyframes dp-sheet-in { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
+
+.dp-card {
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(255,255,255,0.95);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -18px rgba(30,41,99,0.35);
+}
+
+/* Windows-11-Schalter */
+.dp-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px; height: 20px;
+  border-radius: 9999px;
+  border: 1px solid #94a3b8;
+  background: rgba(255,255,255,0.8);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.dp-switch-knob {
+  position: absolute;
+  top: 50%; left: 4px;
+  width: 12px; height: 12px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: #64748b;
+  transition: left 0.18s cubic-bezier(0.16, 1, 0.3, 1), width 0.12s ease, background 0.18s ease;
+}
+.dp-switch:active .dp-switch-knob { width: 15px; }
+.dp-switch-on { background: #4f46e5; border-color: #4f46e5; }
+.dp-switch-on .dp-switch-knob { left: 23px; background: #fff; }
+.dp-switch-on:active .dp-switch-knob { left: 20px; }
+
+.dp-range { width: 100%; accent-color: #4f46e5; }
+
+.dp-recorder {
+  min-width: 150px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid rgba(148,163,184,0.5);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.dp-recorder:hover { border-color: #818cf8; }
+.dp-recorder-active { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.25); }
+.dp-recorder-error { border-color: #f87171; }

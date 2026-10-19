@@ -76,6 +76,7 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete, o
 
   return (
     <div
+      data-my2do-modal
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
       style={{ perspective: "1200px" }}
     >

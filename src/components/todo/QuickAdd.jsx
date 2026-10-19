@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { addTodo } from "@/lib/todoService";
 import EmailDropModal from "./EmailDropModal";
@@ -79,6 +79,13 @@ export default function QuickAdd({ categories, onCreated }) {
   const [dragOver, setDragOver] = useState(false);
   const [emailParsed, setEmailParsed] = useState(null);
   const inputRef = useRef(null);
+
+  // Desktop-App: Strg+N / globales Tastenkürzel springt direkt hierher
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus();
+    window.addEventListener("my2do:focus-quick-add", focus);
+    return () => window.removeEventListener("my2do:focus-quick-add", focus);
+  }, []);
 
   const handleDragOver = (e) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC } from "@/lib/firebaseAuth";
 import {
   subscribeTodos, subscribeCategories,
@@ -17,6 +17,7 @@ import SwipeableTodoCard from "./SwipeableTodoCard";
 import TodoDetailModal from "./TodoDetailModal";
 import SyncIndicator from "./SyncIndicator";
 import FavoritesBar from "./FavoritesBar";
+import useDesktopReminders from "@/components/desktop/useDesktopReminders";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
@@ -120,6 +121,7 @@ export default function Dashboard() {
 
   // searchAll: when active, ignore ALL filters and search archived+non-archived
   const [searchAll, setSearchAll] = useState(false);
+  const searchRef = useRef(null);
 
   const filtered = useMemo(() => {
     let result = todos;
@@ -187,6 +189,37 @@ export default function Dashboard() {
   };
 
   const aiEnabled = userProfile?.aiEnabled;
+
+  // Befehle aus der Desktop-App (Tastenkürzel, Tray, Erinnerungen)
+  const openTodoRef = useRef(openTodo);
+  openTodoRef.current = openTodo;
+  const todosRef = useRef(todos);
+  todosRef.current = todos;
+  useEffect(() => {
+    const tabCount = isAdmin ? 6 : 5;
+    const onCommand = (e) => {
+      const cmd = e.detail || {};
+      if (cmd.type === "tab" && cmd.index < tabCount) {
+        setActiveTab(cmd.index);
+      } else if (cmd.type === "quick-add") {
+        setActiveTab(0);
+        setTimeout(() => window.dispatchEvent(new Event("my2do:focus-quick-add")), 60);
+      } else if (cmd.type === "search") {
+        setActiveTab(0);
+        setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select(); }, 60);
+      } else if (cmd.type === "open-todo") {
+        const todo = todosRef.current.find((t) => t.id === cmd.id);
+        if (todo) {
+          setActiveTab(0);
+          openTodoRef.current(todo);
+        }
+      }
+    };
+    window.addEventListener("my2do:command", onCommand);
+    return () => window.removeEventListener("my2do:command", onCommand);
+  }, [isAdmin]);
+
+  useDesktopReminders(todos);
 
   // Tabs: 0=Aufgaben, 1=Übersicht, 2=Inbox, 3=Export, 4=Admin(if admin), 5=Settings
   const TAB_ICONS = {
@@ -302,7 +335,7 @@ export default function Dashboard() {
                   <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                   </svg>
-                  <input value={search} onChange={(e) => { setSearch(e.target.value); if (!e.target.value) setSearchAll(false); }}
+                  <input ref={searchRef} value={search} onChange={(e) => { setSearch(e.target.value); if (!e.target.value) setSearchAll(false); }}
                     placeholder="Suchen..."
                     className="w-full pl-10 pr-10 py-2.5 rounded-[20px] glass-input text-slate-800 placeholder-slate-400 text-[16px]" />
                   {search && (

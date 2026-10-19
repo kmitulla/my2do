@@ -5,6 +5,7 @@ import { db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import ExportPanel from "./ExportPanel";
 import useConfirmReset from "@/hooks/useConfirmReset";
+import { isDesktop, sendAppCommand } from "@/lib/desktop";
 
 export default function SettingsPanel({ categories, todos, onCategoryDeleted }) {
   const { user, userProfile, logout, updateUserProfile, changePassword, resetPassword } = useFirebaseAuth();
@@ -96,6 +97,24 @@ export default function SettingsPanel({ categories, todos, onCategoryDeleted }) 
           </div>
         </div>
       </div>
+
+      {/* Windows-Desktop-App */}
+      {isDesktop && (
+        <div className="glass rounded-[24px] p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-700">🖥️ Desktop-App</h3>
+          <p className="text-xs text-slate-500">Tastenkürzel, automatisches Einfahren, Bildschirmrand, Breite und Autostart.</p>
+          <div className="flex gap-2">
+            <button onClick={() => sendAppCommand({ type: "settings" })}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid">
+              Desktop-Einstellungen
+            </button>
+            <button onClick={() => sendAppCommand({ type: "help" })}
+              className="flex-1 py-2.5 rounded-xl bg-white/70 border border-slate-200 text-slate-600 text-sm font-medium">
+              Tastenkürzel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KI Feature */}
       <div className="glass rounded-[24px] p-4 space-y-3">

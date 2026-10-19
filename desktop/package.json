@@ -1,0 +1,67 @@
+{
+  "name": "my2do-desktop",
+  "productName": "2Do",
+  "version": "1.0.0",
+  "description": "2Do – Aufgaben-Seitenleiste für Windows",
+  "author": "2Do",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kmitulla/my2do.git"
+  },
+  "main": "main.js",
+  "scripts": {
+    "web": "npm --prefix .. run build:desktop",
+    "start": "npm run web && electron .",
+    "dist": "npm run web && electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "de.my2do.desktop",
+    "productName": "2Do",
+    "copyright": "2Do",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "prompt.html",
+      "prompt-preload.js",
+      "assets/**/*",
+      "app-dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "portable": {
+      "artifactName": "2Do-${version}-portable.exe"
+    },
+    "nsis": {
+      "artifactName": "2Do-Setup-${version}.exe",
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "2Do",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "kmitulla",
+      "repo": "my2do",
+      "releaseType": "release"
+    }
+  }
+}
