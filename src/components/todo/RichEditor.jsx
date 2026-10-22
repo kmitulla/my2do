@@ -11,7 +11,7 @@ function buildTimestamp() {
   return `---${d} // ${t}---`;
 }
 
-const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder, minHeight = 160 }, ref) {
+const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder, minHeight = 160, readOnly = false }, ref) {
   const editorRef = useRef(null);
   const isInitialized = useRef(false);
 
@@ -21,6 +21,14 @@ const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder
       isInitialized.current = true;
     }
   }, []);
+
+  // Schreibgeschützt (z. B. geteiltes 2do, das gerade jemand anderes
+  // bearbeitet): Inhalt von außen live übernehmen
+  useEffect(() => {
+    if (readOnly && editorRef.current && editorRef.current.innerHTML !== (value || "")) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [readOnly, value]);
 
   const exec = useCallback((cmd, val = null) => {
     editorRef.current?.focus();
@@ -177,7 +185,7 @@ const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder
   return (
     <div className="glass-input rounded-2xl overflow-hidden">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 bg-slate-50/80">
+      <div className={`flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-slate-100 bg-slate-50/80 ${readOnly ? "hidden" : ""}`}>
         <ToolBtn onClick={() => exec("undo")} title="Rückgängig">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
@@ -271,7 +279,7 @@ const RichEditor = forwardRef(function RichEditor({ value, onChange, placeholder
       {/* Editor area */}
       <div
         ref={editorRef}
-        contentEditable
+        contentEditable={!readOnly}
         suppressContentEditableWarning
         onInput={handleInput}
         onKeyDown={handleKeyDown}

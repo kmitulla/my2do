@@ -14,6 +14,10 @@ import {
   serverTimestamp,
   orderBy,
   getDocs,
+  writeBatch,
+  runTransaction,
+  arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 
 // Snapshot-Optionen für Offline-Betrieb:
@@ -49,23 +53,62 @@ export const addTodo = (uid, data) => {
   return ref;
 };
 
-export const updateTodo = (uid, id, data) =>
-  fireWrite(updateDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "updateTodo");
+// Schreibt ein 2do. Bei geteilten 2dos werden die Felder aufgeteilt:
+// gemeinsame Felder → sharedTodos/{id}, persönliche → eigenes Verweis-Dokument.
+// Liefert false, wenn gemeinsame Felder nicht geschrieben werden durften, weil
+// gerade jemand anderes das 2do bearbeitet (Bearbeitungssperre).
+export const updateTodo = (uid, id, data, { personalOnly = false } = {}) => {
+  const shared = sharedCache.get(id);
+  if (!shared) {
+    // In einem anderen Fenster / auf einem anderen Gerät geöffnet → nicht dazwischenfunken
+    if (lockedByOther({ editLock: ownLocks.get(id) })) return false;
+    // undefined lehnt Firestore synchron ab (z. B. createdAt eines gerade
+    // erst angelegten 2dos, das noch nicht vom Server zurückkam)
+    const clean = Object.fromEntries(Object.entries(data).filter(([k, v]) => v !== undefined && k !== "editLock"));
+    fireWrite(updateDoc(doc(db, "users", uid, "todos", id), { ...clean, updatedAt: serverTimestamp() }), "updateTodo");
+    return true;
+  }
+  const { personal, common } = splitSharedData(data);
+  if (Object.keys(personal).length) {
+    fireWrite(updateDoc(doc(db, "users", uid, "todos", id), personal), "updateTodo (persönlich)");
+  }
+  if (personalOnly || !Object.keys(common).length) return true;
+  if (lockedByOther(shared)) return false;
+  fireWrite(updateDoc(doc(db, "sharedTodos", id), {
+    ...common, updatedAt: serverTimestamp(), updatedBy: uid,
+  }), "updateTodo (geteilt)");
+  return true;
+};
 
-export const deleteTodo = (uid, id) =>
+// Löschen: geteilte 2dos werden nur für einen selbst entfernt (verlassen),
+// die anderen Mitbearbeiter behalten sie.
+export const deleteTodo = (uid, id) => {
+  if (sharedCache.has(id)) return leaveSharedTodo(uid, id);
   fireWrite(deleteDoc(doc(db, "users", uid, "todos", id)), "deleteTodo");
+};
 
 // Favorit an/aus. Bewusst ohne updatedAt: Markieren ist keine inhaltliche
 // Änderung. favoritedAt bestimmt die Reihenfolge in der Favoriten-Leiste.
+// Favoriten sind immer persönlich (eigenes Dokument, auch bei geteilten 2dos).
 export const setTodoFavorite = (uid, id, favorite) =>
   fireWrite(updateDoc(doc(db, "users", uid, "todos", id), {
     favorite,
     favoritedAt: favorite ? serverTimestamp() : null,
   }), "setTodoFavorite");
 
-// Gelöschtes Todo unter gleicher ID wiederherstellen (Undo nach Swipe-Löschen)
-export const restoreTodo = (uid, id, data) =>
-  fireWrite(setDoc(doc(db, "users", uid, "todos", id), { ...data, updatedAt: serverTimestamp() }), "restoreTodo");
+// Gelöschtes Todo unter gleicher ID wiederherstellen (Undo nach Swipe-Löschen).
+// Geteilte 2dos: wieder beitreten und das persönliche Verweis-Dokument anlegen.
+export const restoreTodo = (uid, id, data) => {
+  if (data.sharedId) {
+    const batch = writeBatch(db);
+    batch.update(doc(db, "sharedTodos", id), { collaborators: arrayUnion(uid) });
+    batch.set(doc(db, "users", uid, "todos", id), linkDocData(uid, id, data));
+    fireWrite(batch.commit(), "restoreTodo (geteilt)");
+    return;
+  }
+  const { editLock: _lock, ...rest } = data;
+  fireWrite(setDoc(doc(db, "users", uid, "todos", id), { ...rest, updatedAt: serverTimestamp() }), "restoreTodo");
+};
 
 export const addCategory = (uid, name, color) => {
   const ref = doc(categoriesCol(uid));
@@ -79,14 +122,66 @@ export const deleteCategory = (uid, id) =>
 export const saveSettings = (uid, data) =>
   fireWrite(setDoc(settingsDoc(uid), data, { merge: true }), "saveSettings");
 
-export const subscribeTodos = (uid, callback) => {
-  const q = query(todosCol(uid), orderBy("createdAt", "desc"));
-  const unsub = onSnapshot(q, snapOpts, (snap) => {
+// Eigene 2dos + geteilte 2dos, zusammengeführt zu einer Liste.
+// onPending bekommt die geteilten 2dos, die einem gesendet, aber noch nicht
+// angenommen wurden (Inbox).
+export const subscribeTodos = (uid, callback, onPending) => {
+  let own = null;
+  let shared = new Map();
+  let sharedLoaded = false;
+
+  const emit = () => {
+    if (own === null) return;
+    const linked = new Set();
+    const list = own.map((t) => {
+      if (!t.sharedId) return t;
+      linked.add(t.sharedId);
+      const s = shared.get(t.sharedId);
+      return s ? mergeSharedTodo(t, s) : t;
+    });
+    callback(list);
+    if (sharedLoaded) onPending?.([...shared.values()].filter((s) => !linked.has(s.id)));
+  };
+
+  const unsubOwn = onSnapshot(query(todosCol(uid), orderBy("createdAt", "desc")), snapOpts, (snap) => {
     reportPending("todos", snap.metadata.hasPendingWrites);
-    const todos = snap.docs.map((d) => ({ id: d.id, ...docData(d) }));
-    callback(todos);
+    own = snap.docs.map((d) => ({ id: d.id, ...docData(d) }));
+    ownLocks.clear();
+    own.forEach((t) => { if (t.editLock) ownLocks.set(t.id, t.editLock); });
+    emit();
   });
-  return withPendingCleanup("todos", unsub);
+
+  const unsubShared = onSnapshot(
+    query(sharedTodosCol(), where("collaborators", "array-contains", uid)),
+    snapOpts,
+    (snap) => {
+      reportPending("sharedTodos", snap.metadata.hasPendingWrites);
+      shared = new Map();
+      snap.docs.forEach((d) => {
+        const data = docData(d);
+        // v1 = altes Kopie-Modell ohne Mitbearbeitung → ignorieren
+        if ((data.v || 0) >= SHARED_VERSION) shared.set(d.id, { id: d.id, ...data });
+      });
+      sharedCache.clear();
+      shared.forEach((v, k) => sharedCache.set(k, v));
+      sharedLoaded = true;
+      emit();
+    },
+    (err) => {
+      console.error("Geteilte 2dos laden fehlgeschlagen:", err);
+      sharedLoaded = true;
+      emit();
+    },
+  );
+
+  return () => {
+    reportPending("todos", false);
+    reportPending("sharedTodos", false);
+    sharedCache.clear();
+    ownLocks.clear();
+    unsubOwn();
+    unsubShared();
+  };
 };
 
 export const subscribeCategories = (uid, callback) => {
@@ -99,85 +194,226 @@ export const subscribeCategories = (uid, callback) => {
   return withPendingCleanup("categories", unsub);
 };
 
-// --- SHARED TODOS (collaboration) ---
+// --- GETEILTE 2DOS (Mitbearbeitung) ---
+// Modell:
+//   sharedTodos/{id}        gemeinsamer Inhalt (Titel, Beschreibung, Prio,
+//                           Status, Deadline, Archiviert …) + Mitglieder
+//   users/{uid}/todos/{id}  pro Mitglied ein Verweis (sharedId = id) mit den
+//                           persönlichen Feldern: Tags, Wiedervorlage, Favorit
+// Überall dieselbe ID → Schreibzugriffe lassen sich ohne Nachschlagen routen.
+// Mitglieder stehen in collaborators (aktiv) und targetUids (je eingeladen);
+// das passt zu den bestehenden Firestore-Rules, kein Rules-Update nötig.
 export const sharedTodosCol = () => collection(db, "sharedTodos");
-export const inboxCol = (uid) => collection(db, "users", uid, "inbox");
+const SHARED_VERSION = 2;
 
-export const sendTodoToUsers = async (senderUid, senderName, todo, targetUids, collaborate) => {
-  // Sanitize: convert Timestamp objects to plain dates so Firestore doesn't reject them
-  const toDate = (v) => v ? (v.toDate ? v.toDate() : new Date(v)) : null;
-  const sharedRef = await addDoc(sharedTodosCol(), {
-    title: todo.title || "",
-    description: todo.description || "",
-    prio: todo.prio || "B",
-    status: todo.status || "offen",
-    manualStatus: todo.manualStatus || "",
-    category: todo.category || "",
-    deadline: toDate(todo.deadline),
-    wiedervorlage: toDate(todo.wiedervorlage),
-    sharedBy: senderUid,
-    sharedByName: senderName,
-    targetUids: targetUids,
-    collaborators: collaborate ? [senderUid, ...targetUids] : [],
-    isCollaborative: !!collaborate,
-    originalId: todo.id,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+// Pro User eigene Felder — alles andere ist gemeinsam
+export const PERSONAL_FIELDS = ["tags", "category", "wiedervorlage", "favorite", "favoritedAt"];
+// Verwaltungsfelder, die nie als gemeinsamer Inhalt geschrieben werden
+const META_FIELDS = new Set([
+  "lockedBy",
+  "id", "userId", "createdAt", "updatedAt", "updatedBy", "sharedId", "shared",
+  "sharedBy", "sharedByName", "collaborators", "targetUids", "memberNames",
+  "isCollaborative", "editLock", "v", "originalId", "sharedFromId",
+]);
+
+// Aktuell sichtbare geteilte 2dos (id → Daten), gepflegt von subscribeTodos
+const sharedCache = new Map();
+// Sperren der eigenen (privaten) 2dos (id → editLock), gepflegt von subscribeTodos
+const ownLocks = new Map();
+export const isSharedTodo = (id) => sharedCache.has(id);
+
+// Aufteilen in persönliche und gemeinsame Felder (Verwaltungsfelder fallen weg)
+export const splitSharedData = (data) => {
+  const personal = {};
+  const common = {};
+  Object.entries(data).forEach(([k, v]) => {
+    if (v === undefined) return;
+    if (PERSONAL_FIELDS.includes(k)) personal[k] = v;
+    else if (!META_FIELDS.has(k)) common[k] = v;
   });
+  return { personal, common };
+};
 
-  // Send inbox notification to each target
-  for (const uid of targetUids) {
-    await addDoc(inboxCol(uid), {
-      sharedTodoId: sharedRef.id,
-      fromUid: senderUid,
-      fromName: senderName,
-      todoTitle: todo.title,
-      isCollaborative: !!collaborate,
-      read: false,
-      createdAt: serverTimestamp(),
-    });
+const mergeSharedTodo = (own, shared) => {
+  const merged = { ...shared };
+  PERSONAL_FIELDS.forEach((k) => {
+    if (own[k] !== undefined) merged[k] = own[k];
+    else delete merged[k];
+  });
+  return {
+    ...merged,
+    id: own.id,
+    sharedId: shared.id,
+    userId: own.userId,
+    // Sortierung "Erstellt" pro User: Zeitpunkt, ab dem man das 2do hat
+    createdAt: own.createdAt ?? shared.createdAt,
+    updatedAt: shared.updatedAt ?? own.updatedAt,
+  };
+};
+
+// Persönliches Verweis-Dokument (Titel nur als Fallback-Anzeige)
+const linkDocData = (uid, id, data = {}) => ({
+  sharedId: id,
+  userId: uid,
+  title: data.title || "",
+  tags: data.tags || [],
+  wiedervorlage: data.wiedervorlage || null,
+  favorite: !!data.favorite,
+  favoritedAt: data.favorite ? (data.favoritedAt || serverTimestamp()) : null,
+  createdAt: data.createdAt || serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+// Auf Server-Bestätigung warten, offline aber nicht ewig hängen:
+// "done" = bestätigt, "queued" = lokal gespeichert, wird später synchronisiert
+const commitOrQueue = (promise, ms = 8000) =>
+  Promise.race([
+    promise.then(() => "done"),
+    new Promise((resolve) => setTimeout(() => resolve("queued"), ms)),
+  ]);
+
+// 2do an andere User senden: Empfänger werden Mitbearbeiter.
+// recipients: [{ uid, name }]. todo: aktueller Stand inkl. id.
+export const shareTodo = async (uid, userName, todo, recipients) => {
+  const id = todo.id;
+  const sharedRef = doc(db, "sharedTodos", id);
+  const uids = recipients.map((r) => r.uid);
+  const names = {};
+  recipients.forEach((r) => { names[r.uid] = r.name; });
+
+  if (sharedCache.has(id)) {
+    const nameUpdates = {};
+    recipients.forEach((r) => { nameUpdates[`memberNames.${r.uid}`] = r.name; });
+    return commitOrQueue(updateDoc(sharedRef, {
+      collaborators: arrayUnion(...uids),
+      targetUids: arrayUnion(...uids),
+      ...nameUpdates,
+    }));
   }
-  return sharedRef.id;
-};
 
-export const subscribeInbox = (uid, callback) => {
-  const q = query(inboxCol(uid), orderBy("createdAt", "desc"));
-  const unsub = onSnapshot(q, snapOpts, (snap) => {
-    reportPending("inbox", snap.metadata.hasPendingWrites);
-    callback(snap.docs.map((d) => ({ id: d.id, ...docData(d) })));
-  });
-  return withPendingCleanup("inbox", unsub);
-};
-
-export const acceptSharedTodo = async (uid, inboxItem, sharedTodo) => {
-  // Copy as own todo
-  await addDoc(collection(db, "users", uid, "todos"), {
-    title: sharedTodo.title,
-    description: sharedTodo.description || "",
-    prio: sharedTodo.prio || "B",
-    status: "offen",
-    manualStatus: sharedTodo.manualStatus || "",
-    category: sharedTodo.category || "",
-    deadline: sharedTodo.deadline || null,
-    wiedervorlage: sharedTodo.wiedervorlage || null,
-    emailTitle: sharedTodo.emailTitle || "",
-    emailBody: sharedTodo.emailBody || "",
-    archived: false,
-    sharedFromId: inboxItem.sharedTodoId,
-    userId: uid,
-    createdAt: serverTimestamp(),
+  const { common } = splitSharedData(todo);
+  const batch = writeBatch(db);
+  batch.set(sharedRef, {
+    ...common,
+    v: SHARED_VERSION,
+    isCollaborative: true,
+    sharedBy: uid,
+    sharedByName: userName,
+    collaborators: [uid, ...uids],
+    targetUids: [uid, ...uids],
+    memberNames: { [uid]: userName, ...names },
+    editLock: null,
+    createdAt: todo.createdAt || serverTimestamp(),
     updatedAt: serverTimestamp(),
+    updatedBy: uid,
   });
-  await deleteDoc(doc(db, "users", uid, "inbox", inboxItem.id));
+  // Eigenes 2do wird zum Verweis; Tags/Wiedervorlage/Favorit bleiben dort
+  batch.update(doc(db, "users", uid, "todos", id), { sharedId: id });
+  return commitOrQueue(batch.commit());
 };
 
-export const dismissInboxItem = (uid, inboxItemId) =>
-  deleteDoc(doc(db, "users", uid, "inbox", inboxItemId));
-
-export const getSharedTodo = async (sharedTodoId) => {
-  const snap = await getDoc(doc(db, "sharedTodos", sharedTodoId));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+// Gesendetes 2do annehmen → erscheint in der eigenen Liste (ohne Tags,
+// ohne Wiedervorlage — die setzt jeder für sich)
+export const acceptSharedTodo = (uid, userName, shared) => {
+  const batch = writeBatch(db);
+  batch.set(doc(db, "users", uid, "todos", shared.id), linkDocData(uid, shared.id, { title: shared.title }));
+  batch.update(doc(db, "sharedTodos", shared.id), { [`memberNames.${uid}`]: userName });
+  fireWrite(batch.commit(), "acceptSharedTodo");
 };
+
+export const declineSharedTodo = (uid, sharedId) =>
+  fireWrite(updateDoc(doc(db, "sharedTodos", sharedId), { collaborators: arrayRemove(uid) }), "declineSharedTodo");
+
+// Geteiltes 2do verlassen: nur für einen selbst entfernen
+export const leaveSharedTodo = (uid, id) => {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "sharedTodos", id), { collaborators: arrayRemove(uid) });
+  batch.delete(doc(db, "users", uid, "todos", id));
+  fireWrite(batch.commit(), "leaveSharedTodo");
+};
+
+// Einzelnes Dokument live beobachten; segments z. B. ["sharedTodos", id]
+export const subscribeDocLive = (segments, callback) =>
+  onSnapshot(doc(db, ...segments), snapOpts, (snap) => {
+    callback(snap.exists() ? { id: snap.id, ...docData(snap) } : null);
+  }, (err) => {
+    console.error("Dokument laden fehlgeschlagen:", segments.join("/"), err);
+    callback(null);
+  });
+
+// Dokument, das die Bearbeitungssperre eines 2dos trägt
+export const todoLockPath = (uid, todo) =>
+  todo.sharedId ? ["sharedTodos", todo.sharedId] : ["users", uid, "todos", todo.id];
+
+export const pageLockPath = (uid, bookId, sectionId, pageId) =>
+  ["users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId];
+
+// --- BEARBEITUNGSSPERRE (2dos & Notizseiten) ---
+// Ein 2do bzw. eine Notizseite kann immer nur in einem Editor bearbeitet
+// werden – egal ob von einer anderen Person (geteilte 2dos), in einem zweiten
+// Fenster oder auf einem anderen Gerät. Die Sperre wird per Heartbeat erneuert
+// und verfällt automatisch, falls ein Gerät abstürzt oder offline geht.
+export const LOCK_TTL_MS = 90 * 1000;
+export const LOCK_HEARTBEAT_MS = 25 * 1000;
+// Eindeutig pro Tab/Fenster, damit auch zwei Geräte desselben Users sich sperren
+export const SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+const lockTime = (lock) => {
+  const at = lock?.at;
+  if (!at) return 0;
+  return at.toMillis ? at.toMillis() : new Date(at).getTime();
+};
+
+export const activeLock = (shared) => {
+  const lock = shared?.editLock;
+  if (!lock?.session) return null;
+  return Date.now() - lockTime(lock) < LOCK_TTL_MS ? lock : null;
+};
+
+export const lockedByOther = (shared) => {
+  const lock = activeLock(shared);
+  return lock && lock.session !== SESSION_ID ? lock : null;
+};
+
+// Transaktionen brauchen den Server — offline nicht ewig warten
+const withTimeout = (promise, ms = 6000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+
+// { ok: true } | { ok: false, lock } | wirft offline/bei Fehlern.
+// force: eigene Sperre aus einem anderen Fenster/Gerät übernehmen (nie die
+// einer anderen Person)
+export const acquireEditLock = (segments, uid, name, { force = false } = {}) =>
+  withTimeout(runTransaction(db, async (tx) => {
+    const ref = doc(db, ...segments);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return { ok: false, lock: null };
+    const other = lockedByOther(snap.data());
+    if (other && !(force && other.uid === uid)) return { ok: false, lock: other };
+    tx.update(ref, { editLock: { uid, name, session: SESSION_ID, at: serverTimestamp() } });
+    return { ok: true };
+  }));
+
+// Heartbeat: true = Sperre gehalten, false = verloren
+export const refreshEditLock = (segments) =>
+  withTimeout(runTransaction(db, async (tx) => {
+    const ref = doc(db, ...segments);
+    const snap = await tx.get(ref);
+    if (!snap.exists() || snap.data().editLock?.session !== SESSION_ID) return false;
+    tx.update(ref, { "editLock.at": serverTimestamp() });
+    return true;
+  }));
+
+export const releaseEditLock = (segments) =>
+  withTimeout(runTransaction(db, async (tx) => {
+    const ref = doc(db, ...segments);
+    const snap = await tx.get(ref);
+    if (snap.exists() && snap.data().editLock?.session === SESSION_ID) {
+      tx.update(ref, { editLock: null });
+    }
+  })).catch(() => {});
 
 export const getAllUsers = async () => {
   const snap = await getDocs(collection(db, "userProfiles"));
@@ -274,6 +510,18 @@ export const getAllNotebookData = async (uid) => {
   return books;
 };
 
+// Namen von Notizbuch + Abschnitt (Kopfzeile im eigenen Notiz-Fenster)
+export const getNoteBreadcrumb = async (uid, bookId, sectionId) => {
+  const [book, section] = await Promise.all([
+    getDoc(doc(db, "users", uid, "notebooks", bookId)).catch(() => null),
+    getDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId)).catch(() => null),
+  ]);
+  return {
+    bookName: book?.exists() ? book.data().name : "",
+    sectionName: section?.exists() ? section.data().name : "",
+  };
+};
+
 // --- NOTES TREE STATE (expanded nodes, synced per user) ---
 export const notesTreeStateDoc = (uid) => doc(db, "users", uid, "settings", "notesTreeState");
 
@@ -289,7 +537,7 @@ export const getNotesTreeState = async (uid) => {
 export const copyPage = async (uid, fromBookId, fromSectionId, pageId, toBookId, toSectionId) => {
   const srcDoc = await getDoc(doc(db, "users", uid, "notebooks", fromBookId, "sections", fromSectionId, "pages", pageId));
   if (!srcDoc.exists()) return;
-  const data = srcDoc.data();
+  const { editLock: _lock, ...data } = srcDoc.data();
   await addDoc(pagesCol(uid, toBookId, toSectionId), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
 };
 
@@ -307,7 +555,7 @@ export const copySection = async (uid, fromBookId, sectionId, toBookId, parentSe
   const newRef = await addDoc(sectionsCol(uid, toBookId), { ...data, parentSectionId, createdAt: serverTimestamp() });
   const pagesSnap = await getDocs(pagesCol(uid, fromBookId, sectionId));
   for (const p of pagesSnap.docs) {
-    const pd = p.data();
+    const { editLock: _lock, ...pd } = p.data();
     await addDoc(pagesCol(uid, toBookId, newRef.id), { ...pd, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   }
 };

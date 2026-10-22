@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import {
   subscribeNotebooks, addNotebook, updateNotebook, deleteNotebook,
   subscribeSections, addSection, updateSection, deleteSection,
   subscribePages, addPage, updatePage, deletePage,
   copyPage, movePage, copySection, moveSection,
-  saveNotesTreeState, getNotesTreeState,
+  saveNotesTreeState, getNotesTreeState, pageLockPath,
 } from "@/lib/todoService";
+import { canOpenWindows, openInWindow } from "@/lib/desktop";
+import useEditLock from "@/hooks/useEditLock";
+import { AppWindow, Lock } from "lucide-react";
 import RichEditor from "./RichEditor";
 import SyncIndicator from "./SyncIndicator";
 import TimestampInfo from "./TimestampInfo";
@@ -194,7 +197,11 @@ function ContextMenu({ items, onClose }) {
 }
 
 // ── Page Editor ───────────────────────────────────────────────────────────────
-function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen, breadcrumb }) {
+// Bearbeitungssperre: eine Seite ist immer nur in einem Editor bearbeitbar
+// (zweites Fenster, anderes Gerät) – dort läuft sie live im Lesemodus mit.
+export function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen, breadcrumb, layout = "panel", onPoppedOut }) {
+  const { user, userProfile } = useFirebaseAuth();
+  const isWindow = layout === "window";
   const [content, setContent] = useState(page.content || "");
   const [saved, setSaved] = useState(true);
   // "Zuletzt geändert" für die Fußzeile: startet mit dem gespeicherten Stand,
@@ -202,25 +209,60 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
   const [lastSaved, setLastSaved] = useState(page.updatedAt);
   const [exporting, setExporting] = useState(false);
   const timerRef = useRef(null);
+  const contentRef = useRef(content);
   const richEditorRef = useRef(null);
+
+  const lockPath = useMemo(() => pageLockPath(uid, bookId, sectionId, page.id), [uid, bookId, sectionId, page.id]);
+  const { lockState, live, takeOver } = useEditLock({
+    path: lockPath, uid, name: userProfile?.displayName || user?.email || "", initial: page,
+  });
+  const locked = lockState === "other";
 
   useEffect(() => {
     setContent(page.content || "");
+    contentRef.current = page.content || "";
     setSaved(true);
     setLastSaved(page.updatedAt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page.id]);
 
+  // Gesperrt: Inhalt aus dem anderen Fenster/Gerät live übernehmen
+  useEffect(() => {
+    if (!locked || !live) return;
+    setContent(live.content || "");
+    contentRef.current = live.content || "";
+    setLastSaved(live.updatedAt);
+  }, [locked, live]);
+
+  const flush = useCallback(() => {
+    if (!timerRef.current) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+    updatePage(uid, bookId, sectionId, page.id, { content: contentRef.current });
+  }, [uid, bookId, sectionId, page.id]);
+
   const handleChange = useCallback((val) => {
+    if (locked) return;
     setContent(val);
+    contentRef.current = val;
     setSaved(false);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
+      timerRef.current = null;
       await updatePage(uid, bookId, sectionId, page.id, { content: val });
       setSaved(true);
       setLastSaved(new Date());
     }, 800);
-  }, [uid, bookId, sectionId, page.id]);
+  }, [uid, bookId, sectionId, page.id, locked]);
+
+  // In eigenem Fenster weiterschreiben: offene Änderung sofort speichern,
+  // Seite hier schließen (gibt die Sperre frei)
+  const canPopOut = !isWindow && canOpenWindows();
+  const popOut = () => {
+    flush();
+    openInWindow(`/note/${bookId}/${sectionId}/${page.id}`, "note", page.title);
+    onPoppedOut?.();
+  };
 
   // Aktuelle Seite als Word-Datei (.docx) herunterladen.
   // docx-Bibliothek wird erst beim Klick nachgeladen (kleines Haupt-Bundle).
@@ -246,32 +288,72 @@ function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscre
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 flex-shrink-0 gap-2">
-        <span className="text-xs font-semibold text-slate-600 truncate flex-1">{page.title}</span>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <SyncIndicator compact />
-          <span className={`text-[10px] font-medium transition-colors ${saved ? "text-emerald-500" : "text-amber-400"}`}>
-            {saved ? "✓ gespeichert" : "● speichert…"}
+      {!isWindow && (
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/60 flex-shrink-0 gap-2">
+          <span className="text-xs font-semibold text-slate-600 truncate flex-1">{page.title}</span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <SyncIndicator compact />
+            <span className={`text-[10px] font-medium transition-colors mx-1 ${locked ? "text-amber-500" : saved ? "text-emerald-500" : "text-amber-400"}`}>
+              {locked ? "🔒 nur lesen" : saved ? "✓ gespeichert" : "● speichert…"}
+            </span>
+            <button onClick={handleWordExport} disabled={exporting} title="Als Word-Datei (.docx) exportieren"
+              className="btn-icon btn-icon-sm text-indigo-500 disabled:opacity-50">
+              {exporting
+                ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                : <WordIcon />}
+            </button>
+            {canPopOut && (
+              <button onClick={popOut} title="In eigenem Fenster öffnen" className="btn-icon btn-icon-sm">
+                <AppWindow size={15} />
+              </button>
+            )}
+            {onToggleFullscreen && (
+              <button onClick={onToggleFullscreen} title={fullscreen ? "Vollbild beenden" : "Vollbild"}
+                className="btn-icon btn-icon-sm">
+                {fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {isWindow && (
+        <div className="flex items-center gap-2 px-5 pt-2 pb-1 flex-shrink-0 max-w-5xl w-full mx-auto">
+          {breadcrumb && <span className="text-[12px] font-medium text-slate-400 truncate">{breadcrumb}</span>}
+          <span className="flex-1" />
+          <SyncIndicator />
+          <span className={`text-[11px] font-medium ${locked ? "text-amber-500" : saved ? "text-emerald-500" : "text-amber-400"}`}>
+            {locked ? "🔒 nur lesen" : saved ? "✓ gespeichert" : "● speichert…"}
           </span>
           <button onClick={handleWordExport} disabled={exporting} title="Als Word-Datei (.docx) exportieren"
-            className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center hover:bg-indigo-100 transition-all disabled:opacity-50">
+            className="btn-icon text-indigo-500 disabled:opacity-50">
             {exporting
               ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
               : <WordIcon />}
           </button>
-          <button onClick={onToggleFullscreen} title={fullscreen ? "Vollbild beenden" : "Vollbild"}
-            className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all">
-            {fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+        </div>
+      )}
+      {locked && (
+        <div className={`flex items-center gap-2.5 mx-3 mt-2 rounded-xl bg-amber-50/90 border border-amber-200 px-3 py-2 ${isWindow ? "max-w-5xl w-[calc(100%-2.5rem)] mx-auto" : ""}`}>
+          <Lock size={14} className="text-amber-600 flex-shrink-0" />
+          <p className="flex-1 text-xs text-amber-800 leading-snug">
+            Diese Seite ist gerade in einem anderen Fenster oder auf einem anderen Gerät geöffnet und wird hier nur angezeigt.
+          </p>
+          <button onClick={takeOver} className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-semibold flex-shrink-0 hover:bg-amber-600">
+            Hier bearbeiten
           </button>
         </div>
+      )}
+      <div className={`flex-1 overflow-y-auto ${isWindow ? "px-5 py-3" : "p-3"}`}>
+        <div className={isWindow ? "max-w-5xl mx-auto" : ""}>
+          {isWindow && <h1 className="text-2xl font-semibold text-slate-800 tracking-tight px-1 mb-3">{page.title}</h1>}
+          <RichEditor ref={richEditorRef} value={content} onChange={handleChange}
+            placeholder="Hier tippen… (Strg+T für Zeitmarke)"
+            minHeight={isWindow ? 520 : fullscreen ? 600 : 300}
+            readOnly={locked} />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-3">
-        <RichEditor ref={richEditorRef} value={content} onChange={handleChange}
-          placeholder="Hier tippen… (Strg+T für Zeitmarke)"
-          minHeight={fullscreen ? 600 : 300} />
-      </div>
-      <div className="flex-shrink-0 px-3 pt-1 pb-2 border-t border-slate-100">
-        <TimestampInfo createdAt={page.createdAt} updatedAt={lastSaved} />
+      <div className={`flex-shrink-0 px-3 pt-1 pb-2 border-t border-slate-200/60 ${isWindow ? "px-5" : ""}`}>
+        <TimestampInfo createdAt={page.createdAt} updatedAt={lastSaved} className={isWindow ? "max-w-5xl mx-auto" : ""} />
       </div>
     </div>
   );
@@ -514,7 +596,7 @@ function PageModal({ uid, selectedPage, breadcrumb, onClose }) {
     return (
       <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
         <PageEditor uid={uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-          page={selectedPage.page} breadcrumb={breadcrumb}
+          page={selectedPage.page} breadcrumb={breadcrumb} onPoppedOut={onClose}
           fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
       </div>
     );
@@ -534,7 +616,7 @@ function PageModal({ uid, selectedPage, breadcrumb, onClose }) {
         </div>
         <div className="flex-1 overflow-y-auto">
           <PageEditor uid={uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-            page={selectedPage.page} breadcrumb={breadcrumb}
+            page={selectedPage.page} breadcrumb={breadcrumb} onPoppedOut={onClose}
             fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
         </div>
       </div>
@@ -607,6 +689,7 @@ export default function NotesPanel() {
       <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
         <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
           page={selectedPage.page} breadcrumb={breadcrumb}
+          onPoppedOut={() => { setFullscreen(false); setSelectedPage(null); }}
           fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
       </div>
     );
@@ -659,7 +742,7 @@ export default function NotesPanel() {
           )}
         </>
       ) : (
-        <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 220px)", maxHeight: "900px" }}>
+        <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 110px)", maxHeight: "1100px" }}>
           <div className="w-52 xl:w-64 flex-shrink-0 glass rounded-[24px] flex flex-col overflow-hidden">
             {sidebarContent}
           </div>
@@ -667,6 +750,7 @@ export default function NotesPanel() {
             {selectedPage ? (
               <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
                 page={selectedPage.page} breadcrumb={breadcrumb}
+                onPoppedOut={() => setSelectedPage(null)}
                 fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
             ) : (
               <div className="flex items-center justify-center h-full text-center px-6 py-12">

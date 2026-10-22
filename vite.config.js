@@ -4,9 +4,14 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
+// `vite build --mode desktop` baut die Web-App für die Windows-Desktop-App
+// (desktop/): ohne Service Worker, Ausgabe nach desktop/app-dist.
+export default defineConfig(({ mode }) => {
+  const desktop = mode === 'desktop'
+  return {
   logLevel: 'error', // Suppress warnings, only show errors
-  base: process.env.GITHUB_PAGES === 'true' ? '/my2do/' : '/',
+  base: !desktop && process.env.GITHUB_PAGES === 'true' ? '/my2do/' : '/',
+  build: desktop ? { outDir: 'desktop/app-dist', emptyOutDir: true } : undefined,
   plugins: [
     base44({
       // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
@@ -19,6 +24,7 @@ export default defineConfig({
     }),
     react(),
     VitePWA({
+      disable: desktop,
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
@@ -48,4 +54,5 @@ export default defineConfig({
       },
     }),
   ]
+  }
 });

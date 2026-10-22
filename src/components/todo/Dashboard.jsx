@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useFirebaseAuth, DEFAULT_UNDO_DURATION_SEC } from "@/lib/firebaseAuth";
 import {
-  subscribeTodos, subscribeCategories, subscribeInbox,
+  subscribeTodos, subscribeCategories,
   subscribeMinimized, saveMinimizedDraft, removeMinimizedDraft,
 } from "@/lib/todoService";
 import QuickAdd from "./QuickAdd";
@@ -15,8 +15,10 @@ import AICreateTodo from "./AICreateTodo";
 import NotesPanel from "./NotesPanel";
 import SwipeableTodoCard from "./SwipeableTodoCard";
 import TodoDetailModal from "./TodoDetailModal";
-import SyncIndicator from "./SyncIndicator";
 import FavoritesBar from "./FavoritesBar";
+import { AppBar, NavDock, NAV } from "./AppBar";
+import useDesktopReminders from "@/components/desktop/useDesktopReminders";
+import { List, LayoutGrid } from "lucide-react";
 
 const LS_SORT = "todo_sort";
 const LS_VIEW = "todo_view";
@@ -61,8 +63,10 @@ export default function Dashboard() {
   const { user, userProfile, isAdmin } = useFirebaseAuth();
   const [todos, setTodos] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [inboxCount, setInboxCount] = useState(0);
-  const [activeTab, setActiveTab] = useState(0);
+  // Gesendete, noch nicht angenommene geteilte 2dos
+  const [pendingShares, setPendingShares] = useState([]);
+  // todos | notes | overview | inbox | settings | admin
+  const [activeTab, setActiveTab] = useState("todos");
   const [selectedTodo, setSelectedTodo] = useState(null);
   // Minimierte Editoren: ungespeicherte Entwürfe — in Firestore synchronisiert,
   // dadurch geräteübergreifend verfügbar. Shape: [{ todoId, draft }]
@@ -79,11 +83,10 @@ export default function Dashboard() {
   const [showAI, setShowAI] = useState(false);
 
   useEffect(() => {
-    const unsub1 = subscribeTodos(user.uid, setTodos);
+    const unsub1 = subscribeTodos(user.uid, setTodos, setPendingShares);
     const unsub2 = subscribeCategories(user.uid, setCategories);
-    const unsub3 = subscribeInbox(user.uid, (items) => setInboxCount(items.length));
-    const unsub4 = subscribeMinimized(user.uid, setMinimizedRaw);
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    const unsub3 = subscribeMinimized(user.uid, setMinimizedRaw);
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [user.uid]);
 
   // Minimierte Entwürfe mit dem zugehörigen Todo anreichern (für Chips + Wiederöffnen)
@@ -120,6 +123,7 @@ export default function Dashboard() {
 
   // searchAll: when active, ignore ALL filters and search archived+non-archived
   const [searchAll, setSearchAll] = useState(false);
+  const searchRef = useRef(null);
 
   const filtered = useMemo(() => {
     let result = todos;
@@ -188,174 +192,111 @@ export default function Dashboard() {
 
   const aiEnabled = userProfile?.aiEnabled;
 
-  // Tabs: 0=Aufgaben, 1=Übersicht, 2=Inbox, 3=Export, 4=Admin(if admin), 5=Settings
-  const TAB_ICONS = {
-    "Aufgaben": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
-    "Übersicht": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
-    "Inbox": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>,
-    "Notizen": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
-    "Admin": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 19.07l1.41-1.41M19.07 19.07l-1.41-1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>,
-    "Einstell.": <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-  };
-  const tabs = [
-    { label: "Aufgaben" },
-    { label: "Notizen" },
-    { label: "Übersicht" },
-    { label: "Inbox", badge: inboxCount },
-    ...(isAdmin ? [{ label: "Admin" }] : []),
-    { label: "Einstell." },
-  ];
+  // Befehle aus der Desktop-App (Tastenkürzel, Tray, Erinnerungen)
+  const openTodoRef = useRef(openTodo);
+  openTodoRef.current = openTodo;
+  const todosRef = useRef(todos);
+  todosRef.current = todos;
+  useEffect(() => {
+    // Strg+1…5: Bereiche in Dock-Reihenfolge, danach Einstellungen
+    const order = [...NAV.map((n) => n.key), "settings"];
+    const onCommand = (e) => {
+      const cmd = e.detail || {};
+      if (cmd.type === "tab" && order[cmd.index]) {
+        setActiveTab(order[cmd.index]);
+      } else if (cmd.type === "quick-add") {
+        setActiveTab("todos");
+        setTimeout(() => window.dispatchEvent(new Event("my2do:focus-quick-add")), 60);
+      } else if (cmd.type === "search") {
+        setActiveTab("todos");
+        setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select(); }, 60);
+      } else if (cmd.type === "open-todo") {
+        const todo = todosRef.current.find((t) => t.id === cmd.id);
+        if (todo) {
+          setActiveTab("todos");
+          openTodoRef.current(todo);
+        }
+      }
+    };
+    window.addEventListener("my2do:command", onCommand);
+    return () => window.removeEventListener("my2do:command", onCommand);
+  }, []);
+
+  useDesktopReminders(todos);
+
+  const activeCount = useMemo(() => todos.filter((t) => !t.archived).length, [todos]);
 
   return (
-    <div className="min-h-screen relative" style={{ overflowY: "auto" }}>
-      {/* Ambienter Liquid-Glass-Hintergrund */}
-      <div className="liquid-bg">
-        <div className="liquid-blob liquid-blob-1" />
-        <div className="liquid-blob liquid-blob-2" />
-        <div className="liquid-blob liquid-blob-3" />
-      </div>
+    <div className="min-h-screen relative">
+      <div className="liquid-bg" />
 
-      {/* Header — schwebende Glasleiste */}
-      <header className="sticky top-0 z-40 px-3 pt-3">
-        <div className="max-w-5xl mx-auto glass-strong rounded-[24px] px-4 py-2.5 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30 flex-shrink-0">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <h1 className="text-lg font-bold text-slate-800 tracking-tight">2Do</h1>
-          <div className="flex-1 flex items-center min-w-0">
-            <SyncIndicator />
-          </div>
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => document.execCommand?.("undo")}
-              title="Rückgängig"
-              className="w-9 h-9 rounded-xl glass-chip flex items-center justify-center text-slate-500 hover:text-slate-700 active:scale-90 transition-all"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5L1 10"/>
-              </svg>
-            </button>
-            <button
-              onClick={() => document.execCommand?.("redo")}
-              title="Wiederholen"
-              className="w-9 h-9 rounded-xl glass-chip flex items-center justify-center text-slate-500 hover:text-slate-700 active:scale-90 transition-all"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.5L23 10"/>
-              </svg>
-            </button>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {aiEnabled && (
-              <button onClick={() => setShowAI(true)}
-                className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-md active:scale-90 transition-all">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-              </button>
-            )}
-            <button onClick={() => handleViewChange(view === "list" ? "grid" : "list")}
-              className="w-10 h-10 rounded-xl glass-chip flex items-center justify-center text-slate-600 transition-all active:scale-90">
-              {view === "list" ? (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <AppBar activeTab={activeTab} onTab={setActiveTab} inboxCount={pendingShares.length}
+        aiEnabled={aiEnabled} onAI={() => setShowAI(true)} />
+
+      <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-3 pb-dock lg:pb-12 relative z-10">
+        {activeTab === "todos" && (
+          <div className="space-y-3">
+            <div className="glass rounded-[22px] p-2.5">
+              <QuickAdd categories={categories} onCreated={handleQuickCreated} aiEnabled={aiEnabled} />
+            </div>
+            <FavoritesBar todos={todos} onOpen={openTodo} />
+            <FilterBar filters={filters} onFiltersChange={handleFiltersChange} categories={categories}
+              sortBy={sortBy} onSortChange={handleSortChange}
+              search={search} searchRef={searchRef}
+              onSearchChange={(v) => { setSearch(v); if (!v) setSearchAll(false); }}
+              searchAll={searchAll} onSearchAllChange={setSearchAll} />
+
+            {/* Anzahl + Ansicht */}
+            <div className="flex items-center gap-2 px-1 pt-0.5">
+              <p className="flex-1 text-[12px] font-medium text-slate-400">
+                {filtered.length === 1 ? "1 Aufgabe" : `${filtered.length} Aufgaben`}
+                {!search && !filters.showArchived && filtered.length !== activeCount && (
+                  <span className="text-slate-300"> von {activeCount}</span>
+                )}
+              </p>
+              <div className="seg !p-0.5 !rounded-[11px]">
+                <button onClick={() => handleViewChange("list")} title="Liste"
+                  className={`seg-item !px-2 !py-1 !rounded-[9px] ${view === "list" ? "seg-item-active" : ""}`}>
+                  <List size={15} />
+                </button>
+                <button onClick={() => handleViewChange("grid")} title="Kacheln"
+                  className={`seg-item !px-2 !py-1 !rounded-[9px] ${view === "grid" ? "seg-item-active" : ""}`}>
+                  <LayoutGrid size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className={view === "grid" ? "grid grid-cols-2 lg:grid-cols-3 gap-2.5" : "space-y-2"}>
+              {filtered.length === 0 ? (
+                <div className="col-span-full text-center py-14">
+                  <div className="w-14 h-14 rounded-2xl glass mx-auto mb-3 flex items-center justify-center text-2xl">📋</div>
+                  <p className="text-slate-500 text-sm font-medium">Keine Aufgaben gefunden</p>
+                  <p className="text-slate-400 text-xs mt-1">{search ? "Andere Suche probieren" : "Oben eine neue Aufgabe anlegen"}</p>
+                </div>
               ) : (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                filtered.map((todo) => (
+                  view === "grid"
+                    ? <TodoCard key={todo.id} todo={todo} view={view} onClick={openTodo} />
+                    : <SwipeableTodoCard key={todo.id} todo={todo} onClick={openTodo}
+                        onAction={(info) => setUndoInfo({ ...info, key: Date.now() })} />
+                ))
               )}
-            </button>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
-              {(userProfile?.displayName || user?.email || "?")[0].toUpperCase()}
             </div>
           </div>
-        </div>
-      </header>
+        )}
 
-      <div className="max-w-5xl mx-auto px-4 pb-28 relative z-10">
-        {/* Tab Nav — Glas-Dock */}
-        <div className="flex gap-1 mt-4 glass rounded-[22px] p-1.5 overflow-x-auto no-scrollbar">
-          {tabs.map((tab, i) => (
-            <button key={tab.label} onClick={() => setActiveTab(i)}
-              className={`flex-shrink-0 flex-1 py-2 px-1 rounded-2xl text-xs font-semibold transition-all relative min-w-[52px] ${
-                activeTab === i ? "tab-pill-active text-blue-600" : "text-slate-500 hover:text-slate-700"
-              }`}>
-              <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden flex items-center justify-center">{TAB_ICONS[tab.label]}</span>
-              {tab.badge > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        {activeTab === "notes" && <NotesPanel />}
+        {activeTab === "overview" && <OverviewPanel todos={todos} />}
+        {activeTab === "inbox" && <InboxPanel items={pendingShares} />}
+        {activeTab === "admin" && isAdmin && <AdminPanel />}
+        {activeTab === "settings" && <SettingsPanel categories={categories} todos={todos} />}
+      </main>
 
-        {/* Tab Content */}
-        <div className="mt-4 space-y-4">
-          {activeTab === 0 && (
-            <>
-              <FavoritesBar todos={todos} onOpen={openTodo} />
-              <div className="glass rounded-[24px] p-3">
-                <QuickAdd categories={categories} onCreated={handleQuickCreated} aiEnabled={aiEnabled} />
-              </div>
-              <div className="space-y-1.5">
-                <div className="relative">
-                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                  </svg>
-                  <input value={search} onChange={(e) => { setSearch(e.target.value); if (!e.target.value) setSearchAll(false); }}
-                    placeholder="Suchen..."
-                    className="w-full pl-10 pr-10 py-2.5 rounded-[20px] glass-input text-slate-800 placeholder-slate-400 text-[16px]" />
-                  {search && (
-                    <button
-                      onClick={() => { setSearch(""); setSearchAll(false); }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-300 flex items-center justify-center text-white hover:bg-slate-400 transition-all"
-                      style={{ fontSize: 10, lineHeight: 1 }}
-                    >✕</button>
-                  )}
-                </div>
-                {search && (
-                  <button
-                    onClick={() => setSearchAll((v) => !v)}
-                    className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all ${
-                      searchAll
-                        ? "bg-indigo-100 text-indigo-600 border border-indigo-200"
-                        : "bg-slate-100 text-slate-500 border border-slate-200"
-                    }`}
-                  >
-                    {searchAll ? "🔍 Alle Notizen (aktiv)" : "🔍 Alle Notizen suchen"}
-                  </button>
-                )}
-              </div>
-              <FilterBar filters={filters} onFiltersChange={handleFiltersChange} categories={categories} sortBy={sortBy} onSortChange={handleSortChange} />
-              <div className={view === "grid" ? "grid grid-cols-2 gap-2.5" : "space-y-2"}>
-                {filtered.length === 0 ? (
-                  <div className="col-span-2 text-center py-12">
-                    <div className="text-4xl mb-3">📋</div>
-                    <p className="text-slate-400 text-sm">Keine Aufgaben gefunden</p>
-                  </div>
-                ) : (
-                  filtered.map((todo) => (
-                    view === "grid"
-                      ? <TodoCard key={todo.id} todo={todo} view={view} onClick={openTodo} />
-                      : <SwipeableTodoCard key={todo.id} todo={todo} onClick={openTodo}
-                          onAction={(info) => setUndoInfo({ ...info, key: Date.now() })} />
-                  ))
-                )}
-              </div>
-            </>
-          )}
-
-          {activeTab === 1 && <NotesPanel />}
-          {activeTab === 2 && <OverviewPanel todos={todos} />}
-          {activeTab === 3 && <InboxPanel />}
-          {activeTab === 4 && isAdmin && <AdminPanel />}
-          {activeTab === (isAdmin ? 5 : 4) && <SettingsPanel categories={categories} todos={todos} />}
-        </div>
-      </div>
+      <NavDock activeTab={activeTab} onTab={setActiveTab} inboxCount={pendingShares.length} />
 
       {/* Minimierte Todo-Editoren — bis 3 als Chips, darüber gebündelt mit aufklappbarer Liste */}
       {minimized.length > 0 && minimized.length <= 3 && (
-        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex gap-2 max-w-[94vw] overflow-x-auto no-scrollbar px-1 py-1">
+        <div className="fixed bottom-[calc(84px+var(--safe-bottom))] lg:bottom-4 left-1/2 -translate-x-1/2 z-40 flex gap-2 max-w-[94vw] overflow-x-auto no-scrollbar px-1 py-1">
           {minimized.map(({ todo, draft }) => (
             <div key={todo.id}
               className="flex-shrink-0 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full glass-strong">
@@ -377,7 +318,7 @@ export default function Dashboard() {
         </div>
       )}
       {minimized.length > 3 && (
-        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center">
+        <div className="fixed bottom-[calc(84px+var(--safe-bottom))] lg:bottom-4 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center">
           {showMinList && (
             <div className="mb-2 w-80 max-w-[92vw] max-h-72 overflow-y-auto rounded-[22px] glass-strong p-1.5 space-y-0.5">
               {minimized.map(({ todo, draft }) => (

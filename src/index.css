@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -26,6 +24,9 @@
     --input: 220 13% 90%;
     --ring: 221 83% 53%;
     --radius: 1rem;
+    /* Systemschrift: SF Pro (Apple), Segoe UI Variable (Windows 11), sonst System */
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 
@@ -36,7 +37,7 @@
 
   html, body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    font-family: var(--font-ui);
     -webkit-font-smoothing: antialiased;
     overscroll-behavior-x: none;
     overflow-x: hidden;
@@ -46,198 +47,437 @@
     font-family: inherit;
     font-size: 16px; /* prevents iOS zoom on focus */
   }
+  button { -webkit-tap-highlight-color: transparent; }
 }
 
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  /* Horizontale Chip-Reihen sanft am Rand ausblenden */
+  .fade-x {
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+  }
+  .pb-dock { padding-bottom: calc(96px + var(--safe-bottom)); }
 }
 
-/* Feine Details — Textauswahl & schlanke Scrollbars passend zum Glas-Look */
+/* Feine Details — Textauswahl & schlanke Scrollbars */
 ::selection {
-  background: rgba(99, 102, 241, 0.25);
+  background: rgba(99, 102, 241, 0.22);
 }
 *::-webkit-scrollbar { width: 6px; height: 6px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.28);
+  background: rgba(100, 116, 139, 0.25);
   border-radius: 9999px;
 }
-*::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.45); }
+*::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.42); }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   iOS 26 Liquid Glass Design System
+   Designsystem (Windows 11 / macOS – helles Glas)
+   Weichzeichner (backdrop-filter) nur für schwebende Leisten und Dialoge;
+   Inhaltsflächen sind halbtransparent ohne Blur → flüssiges Scrollen, wenig
+   GPU-Last – auch im dauerhaft offenen Desktop-Panel und auf dem Handy.
    ──────────────────────────────────────────────────────────────────────────── */
 @layer components {
 
-  /* Ambienter App-Hintergrund mit weichen Farbflächen */
+  /* Ruhiger, statischer Hintergrund (keine Dauer-Animation) */
   .liquid-bg {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    overflow: hidden;
-    background: linear-gradient(165deg, #eef2ff 0%, #e7f0fe 35%, #ecebff 70%, #e5f4ff 100%);
+    background:
+      radial-gradient(1100px 650px at -5% -10%, rgba(129,140,248,0.20), transparent 60%),
+      radial-gradient(900px 600px at 105% 15%, rgba(56,189,248,0.16), transparent 60%),
+      radial-gradient(1000px 700px at 45% 115%, rgba(167,139,250,0.18), transparent 60%),
+      linear-gradient(180deg, #f6f7fb 0%, #eef1f8 100%);
   }
-  .liquid-blob {
-    position: absolute;
-    border-radius: 9999px;
-    filter: blur(90px);
-    opacity: 0.55;
-    animation: liquid-float 24s ease-in-out infinite alternate;
-    will-change: transform;
-  }
-  .liquid-blob-1 {
-    width: 45vw; height: 45vw; min-width: 320px; min-height: 320px;
-    top: -12%; left: -8%;
-    background: radial-gradient(circle at 30% 30%, rgba(99,102,241,0.45), rgba(99,102,241,0) 70%);
-  }
-  .liquid-blob-2 {
-    width: 40vw; height: 40vw; min-width: 280px; min-height: 280px;
-    top: 20%; right: -12%;
-    background: radial-gradient(circle at 60% 40%, rgba(56,189,248,0.40), rgba(56,189,248,0) 70%);
-    animation-delay: -8s;
-  }
-  .liquid-blob-3 {
-    width: 50vw; height: 50vw; min-width: 340px; min-height: 340px;
-    bottom: -18%; left: 22%;
-    background: radial-gradient(circle at 50% 60%, rgba(167,139,250,0.38), rgba(167,139,250,0) 70%);
-    animation-delay: -16s;
-  }
-  .liquid-blob-4 {
-    width: 34vw; height: 34vw; min-width: 240px; min-height: 240px;
-    top: 55%; left: -10%;
-    background: radial-gradient(circle at 50% 50%, rgba(244,114,182,0.22), rgba(244,114,182,0) 70%);
-    animation-delay: -5s;
-  }
-  @keyframes liquid-float {
-    0%   { transform: translate3d(0, 0, 0) scale(1); }
-    50%  { transform: translate3d(3vw, 2vh, 0) scale(1.06); }
-    100% { transform: translate3d(-2vw, -2vh, 0) scale(0.97); }
-  }
+  .liquid-blob { display: none; }
 
-  /* Standard-Glaspanel — Container, Karten-Gruppen, Panels */
+  /* Inhaltsfläche (Karten-Gruppen, Panels) */
   .glass {
     position: relative;
-    background: linear-gradient(150deg, rgba(255,255,255,0.62), rgba(255,255,255,0.30) 55%, rgba(255,255,255,0.44));
-    -webkit-backdrop-filter: blur(32px) saturate(210%);
-    backdrop-filter: blur(32px) saturate(210%);
-    border: 1px solid rgba(255,255,255,0.60);
+    background: rgba(255,255,255,0.70);
+    border: 1px solid rgba(255,255,255,0.85);
     box-shadow:
-      0 1px 1px rgba(255,255,255,0.6),
-      0 12px 40px rgba(31, 41, 90, 0.11),
-      0 2px 8px rgba(31, 41, 90, 0.05),
-      inset 0 1px 0 rgba(255,255,255,0.9),
-      inset 0 -1px 0 rgba(255,255,255,0.2),
-      inset 1px 0 0 rgba(255,255,255,0.35),
-      inset -1px 0 0 rgba(255,255,255,0.35);
+      0 1px 2px rgba(30,41,90,0.04),
+      0 6px 24px -14px rgba(30,41,90,0.22);
   }
 
-  /* Kräftigeres Glas — Header, Modals, Sheets */
+  /* Schwebende Leisten, Menüs, Dialoge – mit Glas-Unschärfe */
   .glass-strong {
     position: relative;
-    background: linear-gradient(150deg, rgba(255,255,255,0.84), rgba(255,255,255,0.58) 55%, rgba(255,255,255,0.72));
-    -webkit-backdrop-filter: blur(44px) saturate(220%);
-    backdrop-filter: blur(44px) saturate(220%);
-    border: 1px solid rgba(255,255,255,0.78);
+    background: rgba(255,255,255,0.80);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.85);
     box-shadow:
-      0 1px 1px rgba(255,255,255,0.7),
-      0 24px 64px rgba(31, 41, 90, 0.18),
-      0 4px 16px rgba(31, 41, 90, 0.08),
-      inset 0 1px 0 rgba(255,255,255,1),
-      inset 0 -1px 0 rgba(255,255,255,0.3),
-      inset 1px 0 0 rgba(255,255,255,0.4),
-      inset -1px 0 0 rgba(255,255,255,0.4);
+      inset 0 1px 0 rgba(255,255,255,0.9),
+      0 1px 2px rgba(30,41,90,0.05),
+      0 16px 44px -18px rgba(30,41,90,0.32);
   }
 
-  /* Feiner Licht-Sheen oben — wie bei iOS-Glas */
-  .glass::after,
-  .glass-strong::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(to bottom, rgba(255,255,255,0.35), rgba(255,255,255,0) 38%);
-    opacity: 0.5;
-  }
-
-  /* Interaktive Glaskarte — Todos, Listeneinträge */
+  /* Listeneinträge */
   .glass-card {
-    background: linear-gradient(150deg, rgba(255,255,255,0.80), rgba(255,255,255,0.50) 60%, rgba(255,255,255,0.62));
-    -webkit-backdrop-filter: blur(26px) saturate(190%);
-    backdrop-filter: blur(26px) saturate(190%);
-    border: 1px solid rgba(255,255,255,0.72);
+    background: rgba(255,255,255,0.78);
+    border: 1px solid rgba(255,255,255,0.92);
     box-shadow:
-      0 1px 1px rgba(255,255,255,0.55),
-      0 5px 22px rgba(31, 41, 90, 0.08),
-      0 1px 4px rgba(31, 41, 90, 0.04),
-      inset 0 1px 0 rgba(255,255,255,0.95),
-      inset 0 -1px 0 rgba(255,255,255,0.25);
-    transition: box-shadow 0.25s ease, transform 0.25s ease, background 0.25s ease;
+      0 1px 2px rgba(30,41,90,0.05),
+      0 4px 14px -8px rgba(30,41,90,0.16);
+    transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease;
   }
   .glass-card:hover {
-    background: linear-gradient(150deg, rgba(255,255,255,0.88), rgba(255,255,255,0.60) 60%, rgba(255,255,255,0.72));
+    background: rgba(255,255,255,0.94);
     box-shadow:
-      0 1px 1px rgba(255,255,255,0.6),
-      0 10px 32px rgba(31, 41, 90, 0.13),
-      0 2px 8px rgba(31, 41, 90, 0.05),
-      inset 0 1px 0 rgba(255,255,255,1);
+      0 1px 2px rgba(30,41,90,0.06),
+      0 10px 26px -12px rgba(30,41,90,0.26);
   }
 
-  /* Aktive Tab-Pille im Glas-Dock */
+  /* Aktives Element im Segment */
   .tab-pill-active {
-    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.78));
-    border: 1px solid rgba(255,255,255,0.95);
-    box-shadow:
-      0 6px 18px rgba(63, 81, 235, 0.20),
-      0 1px 4px rgba(31, 41, 90, 0.08),
-      inset 0 1px 0 rgba(255,255,255,1),
-      inset 0 -1px 0 rgba(148,163,184,0.15);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(30,41,90,0.08), 0 4px 12px -6px rgba(30,41,90,0.28);
   }
 
-  /* Primäre "flüssige" Buttons — glänzender Verlauf mit Lichtkante */
   .btn-liquid {
     box-shadow:
-      0 10px 24px rgba(79, 70, 229, 0.35),
-      0 2px 6px rgba(79, 70, 229, 0.25),
-      inset 0 1px 0 rgba(255,255,255,0.45),
-      inset 0 -2px 5px rgba(0,0,0,0.14);
-    transition: box-shadow 0.25s ease, transform 0.15s ease, filter 0.2s ease;
+      0 6px 16px -6px rgba(79, 70, 229, 0.55),
+      inset 0 1px 0 rgba(255,255,255,0.35);
+    transition: box-shadow 0.2s ease, transform 0.12s ease, filter 0.2s ease;
   }
   .btn-liquid:hover { filter: brightness(1.05); }
-  .btn-liquid:active {
-    transform: scale(0.98);
-    box-shadow:
-      0 4px 12px rgba(79, 70, 229, 0.3),
-      inset 0 1px 0 rgba(255,255,255,0.3),
-      inset 0 2px 6px rgba(0,0,0,0.15);
-  }
+  .btn-liquid:active { transform: scale(0.98); }
 
-  /* Kleine Glas-Buttons / Chips */
+  /* Kleine Buttons / Chips */
   .glass-chip {
-    background: rgba(255,255,255,0.55);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-    border: 1px solid rgba(255,255,255,0.6);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 4px rgba(31,41,90,0.06);
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(15,23,42,0.06);
+    box-shadow: 0 1px 1px rgba(30,41,90,0.04);
   }
-  .glass-chip:hover { background: rgba(255,255,255,0.75); }
+  .glass-chip:hover { background: #fff; }
 
-  /* Glas-Eingabefelder */
+  /* Eingabefelder */
   .glass-input {
-    background: rgba(255,255,255,0.6);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    backdrop-filter: blur(16px) saturate(160%);
-    border: 1px solid rgba(255,255,255,0.7);
-    box-shadow: inset 0 1px 2px rgba(31,41,90,0.05), inset 0 1px 0 rgba(255,255,255,0.7);
-    transition: box-shadow 0.2s ease, background 0.2s ease;
+    background: rgba(255,255,255,0.78);
+    border: 1px solid rgba(15,23,42,0.08);
+    box-shadow: inset 0 1px 1px rgba(30,41,90,0.03);
+    transition: box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
   }
   .glass-input:focus {
     outline: none;
-    background: rgba(255,255,255,0.8);
-    box-shadow:
-      inset 0 1px 2px rgba(31,41,90,0.04),
-      0 0 0 3px rgba(99,102,241,0.25);
+    background: #fff;
+    border-color: rgba(99,102,241,0.55);
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+  }
+
+  /* Icon-Buttons in Leisten */
+  .btn-icon {
+    width: 36px; height: 36px;
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+    color: #64748b;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  }
+  .btn-icon:hover { background: rgba(15,23,42,0.05); color: #1e293b; }
+  .btn-icon:active { transform: scale(0.93); }
+  .btn-icon:disabled { opacity: 0.4; pointer-events: none; }
+  .btn-icon-active, .btn-icon-active:hover { background: rgba(99,102,241,0.13); color: #4338ca; }
+  .btn-icon-sm { width: 30px; height: 30px; border-radius: 10px; }
+
+  /* Segment-Umschalter (Win11 / macOS) */
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 14px;
+    background: rgba(15,23,42,0.05);
+  }
+  .seg-item {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 6px 12px;
+    border-radius: 11px;
+    font-size: 13px; font-weight: 600;
+    color: #64748b;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .seg-item:hover { color: #1e293b; }
+  .seg-item-active, .seg-item-active:hover {
+    background: #fff;
+    color: #4338ca;
+    box-shadow: 0 1px 2px rgba(30,41,90,0.08), 0 4px 12px -6px rgba(30,41,90,0.28);
+  }
+
+  /* Navigations-Dock unten (Handy & Desktop-Panel) */
+  .dock {
+    position: fixed;
+    left: 50%;
+    bottom: calc(10px + var(--safe-bottom));
+    transform: translateX(-50%);
+    z-index: 40;
+    display: flex;
+    gap: 2px;
+    padding: 5px;
+    border-radius: 22px;
+    max-width: calc(100% - 20px);
+  }
+  .dock-item {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-width: 64px;
+    padding: 7px 10px 5px;
+    border-radius: 17px;
+    font-size: 10px; font-weight: 600;
+    color: #64748b;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .dock-item:active { transform: scale(0.95); }
+  .dock-item-active { background: rgba(99,102,241,0.13); color: #4338ca; }
+  .badge {
+    position: absolute;
+    top: 2px; right: 10px;
+    min-width: 16px; height: 16px;
+    padding: 0 4px;
+    border-radius: 9999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 9px; font-weight: 700; line-height: 16px;
+    text-align: center;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+  }
+
+  /* Kontextmenüs */
+  .menu {
+    position: absolute;
+    z-index: 70;
+    min-width: 250px;
+    padding: 6px;
+    border-radius: 16px;
+    animation: menu-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .menu-item {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    white-space: nowrap;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 13px; font-weight: 500;
+    color: #334155;
+    text-align: left;
+    transition: background 0.12s ease;
+  }
+  .menu-item:hover { background: rgba(99,102,241,0.09); color: #1e1b4b; }
+  .menu-item-danger { color: #dc2626; }
+  .menu-item-danger:hover { background: rgba(239,68,68,0.09); color: #b91c1c; }
+  .menu-sep { height: 1px; margin: 5px 8px; background: rgba(15,23,42,0.07); }
+  @keyframes menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+
+  .section-label {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Windows-Desktop-App (Electron, desktop/)
+   Panel: das Fenster ist transparent; .dp-frame ist das sichtbare, schwebende
+   Panel. Abstände müssen zu FRAME_LEFT/FRAME_RIGHT in desktop/main.js passen.
+   Eigene Fenster (2do / Notiz): html.desktop-window, ggf. mit Mica (html.mica).
+   ──────────────────────────────────────────────────────────────────────────── */
+html.desktop-panel,
+html.desktop-panel body {
+  background: transparent !important;
+  height: 100%;
+  overflow: hidden;
+}
+html.desktop-panel #root { height: 100%; }
+
+.dp-frame {
+  position: fixed;
+  top: 10px; bottom: 10px; left: 18px; right: 10px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #f4f6fb;
+  box-shadow:
+    0 30px 60px -22px rgba(30,41,99,0.5),
+    0 10px 24px -14px rgba(30,41,99,0.35),
+    inset 0 0 0 1px rgba(255,255,255,0.75);
+  outline: 1px solid rgba(99,102,241,0.14);
+  transform-origin: 100% 50%;
+  will-change: transform, opacity, filter;
+}
+.dp-in {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  filter: none;
+  transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 260ms ease-out;
+}
+/* "Einrollen": nach rechts raus, leicht gedreht und weichgezeichnet */
+.dp-out {
+  transform: perspective(1400px) translate3d(calc(100% + 30px), 0, 0) rotateY(-18deg) scale(0.96);
+  opacity: 0;
+  filter: blur(10px) saturate(1.3);
+  pointer-events: none;
+  transition: transform 280ms cubic-bezier(0.7, 0, 0.84, 0), opacity 260ms ease-in, filter 260ms ease-in;
+}
+.dp-resizing, .dp-resizing * { cursor: ew-resize !important; user-select: none; }
+
+.dp-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+html.desktop-panel .dp-scroll .min-h-screen { min-height: 100%; }
+
+/* Countdown bis zum automatischen Einfahren – haarfein oben am Panel */
+.dp-leaving {
+  position: absolute;
+  left: 22px; right: 22px; top: 0;
+  height: 2px;
+  z-index: 60;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #6366f1, #38bdf8);
+  transform-origin: center;
+  animation-name: dp-leave;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  pointer-events: none;
+}
+@keyframes dp-leave { from { transform: scaleX(1); opacity: 1; } to { transform: scaleX(0); opacity: 0.4; } }
+
+/* Schwebende Mini-Steuerung (z. B. auf der Anmeldeseite) */
+.dp-floating-controls {
+  position: absolute;
+  top: 10px; right: 10px;
+  z-index: 60;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 14px;
+}
+
+.dp-grip {
+  position: absolute;
+  left: 0; top: 60px; bottom: 0;
+  width: 7px;
+  z-index: 46;
+  cursor: ew-resize;
+}
+.dp-grip::after {
+  content: "";
+  position: absolute;
+  left: 2px; top: 50%;
+  width: 4px; height: 44px;
+  margin-top: -22px;
+  border-radius: 9999px;
+  background: rgba(99,102,241,0.45);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.dp-grip:hover::after, .dp-resizing .dp-grip::after { opacity: 1; }
+
+/* Eigenes Fenster: Titelleiste zum Verschieben, rechts Platz für die
+   Windows-Fensterknöpfe (Titelleisten-Overlay) */
+.win-titlebar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 150px 0 14px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.win-titlebar button, .win-titlebar input, .win-titlebar a { -webkit-app-region: no-drag; }
+html.mica, html.mica body { background: transparent !important; }
+html.mica .liquid-bg { opacity: 0.55; }
+
+.dp-kbd {
+  display: inline-flex; align-items: center;
+  font: 600 11px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: #334155;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #fff, #f1f5f9);
+  border: 1px solid rgba(148,163,184,0.5);
+  box-shadow: 0 1px 0 rgba(148,163,184,0.55);
+  white-space: nowrap;
+}
+.dp-kbd-sm { font-size: 10px; padding: 3px 5px; border-radius: 6px; }
+
+.dp-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  background: rgba(15,23,42,0.16);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: dp-fade 180ms ease-out;
+}
+.dp-sheet {
+  flex: 1;
+  margin: 10px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: 20px;
+  background: linear-gradient(165deg, rgba(250,251,255,0.98), rgba(238,242,255,0.98));
+  box-shadow: 0 24px 50px -20px rgba(30,41,99,0.45), inset 0 0 0 1px rgba(255,255,255,0.8);
+  animation: dp-sheet-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes dp-fade { from { opacity: 0; } }
+@keyframes dp-sheet-in { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
+
+.dp-card {
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(255,255,255,0.95);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -18px rgba(30,41,99,0.35);
+}
+
+/* Windows-11-Schalter */
+.dp-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px; height: 20px;
+  border-radius: 9999px;
+  border: 1px solid #94a3b8;
+  background: rgba(255,255,255,0.8);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.dp-switch-knob {
+  position: absolute;
+  top: 50%; left: 4px;
+  width: 12px; height: 12px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: #64748b;
+  transition: left 0.18s cubic-bezier(0.16, 1, 0.3, 1), width 0.12s ease, background 0.18s ease;
+}
+.dp-switch:active .dp-switch-knob { width: 15px; }
+.dp-switch-on { background: #4f46e5; border-color: #4f46e5; }
+.dp-switch-on .dp-switch-knob { left: 23px; background: #fff; }
+.dp-switch-on:active .dp-switch-knob { left: 20px; }
+
+.dp-range { width: 100%; accent-color: #4f46e5; }
+
+.dp-recorder {
+  min-width: 150px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid rgba(148,163,184,0.5);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.dp-recorder:hover { border-color: #818cf8; }
+.dp-recorder-active { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.25); }
+.dp-recorder-error { border-color: #f87171; }

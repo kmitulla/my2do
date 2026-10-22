@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { Search, X, ArrowDownUp, SlidersHorizontal, Check, Bookmark } from "lucide-react";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import { subscribeFilterPresets, saveFilterPresets } from "@/lib/todoService";
 import { StarIcon } from "./FavoriteButton";
@@ -22,10 +23,51 @@ const PRIO_BTN = {
   C: { active: "bg-emerald-500 text-white", base: "glass-chip text-slate-600" },
 };
 
-export default function FilterBar({ filters, onFiltersChange, categories, sortBy, onSortChange }) {
+// Sortier-Menü (Popover mit Häkchen)
+function SortMenu({ sortBy, onSortChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const current = SORT_OPTIONS.find((o) => o.value === sortBy);
+  return (
+    <div ref={ref} className="relative flex-shrink-0">
+      <button onClick={() => setOpen((v) => !v)} title={`Sortierung: ${current?.label || ""}`}
+        className={`h-10 px-2.5 rounded-[14px] glass-chip flex items-center gap-1.5 text-slate-600 text-[13px] font-medium ${open ? "!bg-white" : ""}`}>
+        <ArrowDownUp size={16} />
+        <span className="hidden sm:inline max-w-[120px] truncate">{current?.label}</span>
+      </button>
+      {open && (
+        <div className="menu glass-strong right-0 top-full mt-2 !min-w-[210px]">
+          <p className="section-label px-2.5 pt-1 pb-1.5">Sortieren nach</p>
+          {SORT_OPTIONS.map((o) => (
+            <button key={o.value} className="menu-item" onClick={() => { onSortChange(o.value); setOpen(false); }}>
+              <span className="w-4 flex-shrink-0 text-indigo-600">{o.value === sortBy && <Check size={15} strokeWidth={2.6} />}</span>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Werkzeugzeile über der Liste: Suche · Favoriten · Sortierung · Filter
+export default function FilterBar({
+  filters, onFiltersChange, categories, sortBy, onSortChange,
+  search, onSearchChange, searchAll, onSearchAllChange, searchRef,
+}) {
   const { user } = useFirebaseAuth();
   const [showFilters, setShowFilters] = useState(false);
-  const [showPresets, setShowPresets] = useState(false);
   const [presets, setPresets] = useState([]);
   const [newPresetName, setNewPresetName] = useState("");
 
@@ -52,7 +94,6 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
   const handleLoadPreset = (preset) => {
     onFiltersChange(preset.filters);
     onSortChange(preset.sortBy);
-    setShowPresets(false);
   };
 
   const handleDeletePreset = (id) => {
@@ -78,89 +119,86 @@ export default function FilterBar({ filters, onFiltersChange, categories, sortBy
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-2 items-center">
-        <select value={sortBy} onChange={(e) => onSortChange(e.target.value)}
-          className="flex-1 px-3 py-2 rounded-[18px] glass-input text-slate-700 text-sm">
-          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+      <div className="flex gap-1.5 items-center">
+        <div className="relative flex-1 min-w-0">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input ref={searchRef} value={search} onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Suchen …"
+            className="w-full h-10 pl-10 pr-9 rounded-[14px] glass-input text-slate-800 placeholder-slate-400 text-[15px]" />
+          {search && (
+            <button onClick={() => onSearchChange("")} title="Suche leeren"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-200/80 text-slate-500 flex items-center justify-center hover:bg-slate-300">
+              <X size={13} strokeWidth={2.6} />
+            </button>
+          )}
+        </div>
 
         {/* Nur Favoriten */}
         <button onClick={() => updateFilter("onlyFavorites", !filters.onlyFavorites)}
           aria-pressed={!!filters.onlyFavorites}
-          className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center ${
-            filters.onlyFavorites ? "bg-amber-400 text-white shadow-md shadow-amber-400/30" : "glass-chip text-slate-600"
+          className={`w-10 h-10 rounded-[14px] flex items-center justify-center flex-shrink-0 transition-all ${
+            filters.onlyFavorites ? "bg-amber-400 text-white shadow-md shadow-amber-400/30" : "glass-chip text-slate-500"
           }`} title={filters.onlyFavorites ? "Alle anzeigen" : "Nur Favoriten anzeigen"}>
-          <StarIcon filled={!!filters.onlyFavorites} size={14} />
+          <StarIcon filled={!!filters.onlyFavorites} size={16} />
         </button>
 
-        {/* Presets button */}
-        <button onClick={() => { setShowPresets(!showPresets); setShowFilters(false); }}
-          className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1 ${
-            showPresets ? "bg-violet-500 text-white shadow-md shadow-violet-500/25" : "glass-chip text-slate-600"
-          }`} title="Filter-Presets">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-          </svg>
-          {presets.length > 0 && <span className="text-xs">{presets.length}</span>}
-        </button>
+        <SortMenu sortBy={sortBy} onSortChange={onSortChange} />
 
-        <button onClick={() => { setShowFilters(!showFilters); setShowPresets(false); }}
-          className={`px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
-            showFilters || activeCount > 0 ? "bg-blue-500 text-white shadow-md shadow-blue-500/25" : "glass-chip text-slate-600"
+        <button onClick={() => setShowFilters(!showFilters)} title="Filter"
+          className={`h-10 px-2.5 rounded-[14px] text-[13px] font-medium transition-all flex items-center gap-1.5 flex-shrink-0 ${
+            showFilters || activeCount > 0 ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/25" : "glass-chip text-slate-600"
           }`}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-          </svg>
-          Filter{activeCount > 0 && <span className="bg-white/30 text-xs px-1 rounded-full">{activeCount}</span>}
+          <SlidersHorizontal size={16} />
+          <span className="hidden sm:inline">Filter</span>
+          {activeCount > 0 && <span className="bg-white/25 text-[11px] font-bold px-1.5 rounded-full">{activeCount}</span>}
         </button>
       </div>
 
-      {/* Presets panel */}
-      {showPresets && (
-        <div className="glass rounded-[24px] p-3 space-y-3 shadow-sm">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Filter-Presets</p>
-
-          {/* Existing presets */}
-          {presets.length === 0 ? (
-            <p className="text-xs text-slate-400">Noch keine Presets gespeichert.</p>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {presets.map((p) => (
-                <div key={p.id} className="flex items-center gap-2">
-                  <button onClick={() => handleLoadPreset(p)}
-                    className="flex-1 text-left px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-xs font-medium hover:bg-violet-100 transition-all">
-                    <span className="font-semibold">{p.name}</span>
-                    <span className="ml-2 text-violet-400 font-normal">
-                      {SORT_OPTIONS.find(o => o.value === p.sortBy)?.label || p.sortBy}
-                    </span>
-                  </button>
-                  <button onClick={() => handleDeletePreset(p.id)}
-                    className="w-7 h-7 rounded-lg bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-100 text-xs">
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Save current as preset */}
-          <div className="border-t border-slate-100 pt-2 flex gap-2">
-            <input value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
-              placeholder="Preset-Name…"
-              onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
-              className="flex-1 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-400/50" />
-            <button onClick={handleSavePreset} disabled={!newPresetName.trim()}
-              className="px-3 py-1.5 rounded-xl bg-violet-500 text-white text-xs font-semibold disabled:opacity-40">
-              Speichern
-            </button>
-          </div>
-          <p className="text-[10px] text-slate-400">Aktuelle Filter + Sortierung werden gespeichert.</p>
-        </div>
+      {search && (
+        <button onClick={() => onSearchAllChange(!searchAll)}
+          className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition-all ${
+            searchAll ? "bg-indigo-100 text-indigo-600 border border-indigo-200" : "glass-chip text-slate-500"
+          }`}>
+          {searchAll ? "✓ Suche in allen 2dos (inkl. Archiv, ohne Filter)" : "In allen 2dos suchen (inkl. Archiv, ohne Filter)"}
+        </button>
       )}
 
       {/* Filter panel */}
       {showFilters && (
-        <div className="glass rounded-[24px] p-3 space-y-3">
+        <div className="glass rounded-[20px] p-3 space-y-3">
+
+          {/* Gespeicherte Filter (Presets, geräteübergreifend) */}
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+              <Bookmark size={12} /> Gespeicherte Filter
+            </label>
+            {presets.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {presets.map((p) => (
+                  <span key={p.id} className="inline-flex items-center rounded-xl bg-violet-50 border border-violet-200 overflow-hidden">
+                    <button onClick={() => handleLoadPreset(p)} title={SORT_OPTIONS.find((o) => o.value === p.sortBy)?.label || p.sortBy}
+                      className="pl-2.5 pr-1.5 py-1.5 text-violet-700 text-xs font-semibold hover:bg-violet-100">
+                      {p.name}
+                    </button>
+                    <button onClick={() => handleDeletePreset(p.id)} title="Löschen"
+                      className="px-1.5 py-1.5 text-violet-300 hover:text-red-500 hover:bg-red-50">
+                      <X size={12} strokeWidth={2.6} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
+                placeholder="Aktuelle Filter speichern als …"
+                onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
+                className="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl glass-input text-xs text-slate-700" />
+              <button onClick={handleSavePreset} disabled={!newPresetName.trim()}
+                className="px-3 py-1.5 rounded-xl bg-violet-500 text-white text-xs font-semibold disabled:opacity-40">
+                Speichern
+              </button>
+            </div>
+          </div>
 
           {/* Status */}
           <div>
