@@ -291,7 +291,10 @@
    Eigene Fenster (2do / Notiz): html.desktop-window.
    ──────────────────────────────────────────────────────────────────────────── */
 html.desktop-main, html.desktop-main body { background: #eef0f5; }
-html.mica, html.mica body { background: transparent !important; }
+/* Mica scheint nur leicht durch: helle Tönung darüber hält die Schrift auch
+   dann lesbar, wenn Windows den Hintergrund dunkel zeichnet */
+html.mica { background: transparent !important; }
+html.mica body { background: rgba(240,242,247,0.82) !important; }
 html.desktop-main .liquid-bg { display: none; }
 .dt-login .min-h-screen { min-height: 100%; }
 html.mica .liquid-bg { opacity: 0.55; }

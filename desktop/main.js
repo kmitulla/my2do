@@ -12,7 +12,7 @@
 
 const {
   app, BrowserWindow, globalShortcut, screen, Tray, Menu, ipcMain,
-  nativeImage, shell, protocol, session, Notification,
+  nativeImage, shell, protocol, session, Notification, nativeTheme,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -485,6 +485,10 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showWindow());
 
   app.whenReady().then(() => {
+    // Die Oberfläche ist hell gestaltet – auch bei dunklem Windows-Design die
+    // Fenster hell darstellen (sonst wird der Mica-Hintergrund dunkel und die
+    // Schrift in Seitenleiste/Titelleiste unlesbar)
+    nativeTheme.themeSource = "light";
     loadSettings();
     registerAppProtocol();
     session.defaultSession.setSpellCheckerLanguages(["de-DE"]);
