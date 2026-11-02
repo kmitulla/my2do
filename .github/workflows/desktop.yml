@@ -2,11 +2,12 @@ name: Desktop-App (Windows) bauen
 
 # Baut die Windows-App (desktop/) auf einem echten Windows-Runner:
 # 2Do-Setup-<version>.exe (Installer) und 2Do-<version>-portable.exe.
-# - bei Änderungen auf main: als Artefakt am Workflow-Lauf herunterladbar
+# - bei Änderungen auf main oder einem claude/…-Arbeitsbranch: als Artefakt am
+#   Workflow-Lauf herunterladbar
 # - bei einem Tag "desktop-v*" zusätzlich als GitHub-Release
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
     paths:
       - "desktop/**"
       - "src/**"
