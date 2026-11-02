@@ -48,4 +48,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/desktop-v')
         uses: softprops/action-gh-release@v2
         with:
+          name: 2Do für Windows ${{ github.ref_name }}
+          body: |
+            **2Do-Setup-….exe** installiert 2Do (Startmenü, Windows-Hinweise, Autostart).
+            **2Do-…-portable.exe** startet ohne Installation.
+
+            Die Dateien sind nicht signiert: Windows SmartScreen fragt beim ersten Start nach
+            („Weitere Informationen" → „Trotzdem ausführen").
           files: desktop/release/*.exe

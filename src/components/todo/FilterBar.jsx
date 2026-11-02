@@ -61,10 +61,12 @@ function SortMenu({ sortBy, onSortChange }) {
   );
 }
 
-// Werkzeugzeile über der Liste: Suche · Favoriten · Sortierung · Filter
+// Werkzeugzeile über der Liste: Suche · Favoriten · Sortierung · Filter.
+// compact (Desktop-App): Suche sitzt in der Titelleiste, Favoriten in der
+// Seitenleiste – hier nur Sortierung und Filter.
 export default function FilterBar({
   filters, onFiltersChange, categories, sortBy, onSortChange,
-  search, onSearchChange, searchAll, onSearchAllChange, searchRef,
+  search, onSearchChange, searchAll, onSearchAllChange, searchRef, compact = false,
 }) {
   const { user } = useFirebaseAuth();
   const [showFilters, setShowFilters] = useState(false);
@@ -120,6 +122,7 @@ export default function FilterBar({
   return (
     <div className="space-y-2">
       <div className="flex gap-1.5 items-center">
+        {compact ? <span className="flex-1" /> : (<>
         <div className="relative flex-1 min-w-0">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input ref={searchRef} value={search} onChange={(e) => onSearchChange(e.target.value)}
@@ -141,6 +144,7 @@ export default function FilterBar({
           }`} title={filters.onlyFavorites ? "Alle anzeigen" : "Nur Favoriten anzeigen"}>
           <StarIcon filled={!!filters.onlyFavorites} size={16} />
         </button>
+        </>)}
 
         <SortMenu sortBy={sortBy} onSortChange={onSortChange} />
 

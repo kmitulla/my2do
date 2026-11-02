@@ -625,7 +625,8 @@ function PageModal({ uid, selectedPage, breadcrumb, onClose }) {
 }
 
 // ── Main NotesPanel ───────────────────────────────────────────────────────────
-export default function NotesPanel() {
+// fill: volle Höhe des Elternelements (Desktop-App) statt Fensterhöhe
+export default function NotesPanel({ fill = false }) {
   const { user } = useFirebaseAuth();
   const [notebooks, setNotebooks] = useState([]);
   const [selectedPage, setSelectedPage] = useState(null);
@@ -742,7 +743,7 @@ export default function NotesPanel() {
           )}
         </>
       ) : (
-        <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 110px)", maxHeight: "1100px" }}>
+        <div className="flex gap-3" style={fill ? { height: "100%" } : { minHeight: "70vh", height: "calc(100vh - 110px)", maxHeight: "1100px" }}>
           <div className="w-52 xl:w-64 flex-shrink-0 glass rounded-[24px] flex flex-col overflow-hidden">
             {sidebarContent}
           </div>
@@ -751,7 +752,7 @@ export default function NotesPanel() {
               <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
                 page={selectedPage.page} breadcrumb={breadcrumb}
                 onPoppedOut={() => setSelectedPage(null)}
-                fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
+                fullscreen={false} onToggleFullscreen={fill ? undefined : () => setFullscreen(true)} />
             ) : (
               <div className="flex items-center justify-center h-full text-center px-6 py-12">
                 <div>

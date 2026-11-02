@@ -285,107 +285,198 @@
 
 /* ────────────────────────────────────────────────────────────────────────────
    Windows-Desktop-App (Electron, desktop/)
-   Panel: das Fenster ist transparent; .dp-frame ist das sichtbare, schwebende
-   Panel. Abstände müssen zu FRAME_LEFT/FRAME_RIGHT in desktop/main.js passen.
-   Eigene Fenster (2do / Notiz): html.desktop-window, ggf. mit Mica (html.mica).
+   Hauptfenster: html.desktop-main – Titelleiste (zum Verschieben, rechts die
+   Windows-Fensterknöpfe), Navigation links auf Mica, Inhalt auf hellen
+   Flächen; alles nebeneinander, nichts überlagert.
+   Eigene Fenster (2do / Notiz): html.desktop-window.
    ──────────────────────────────────────────────────────────────────────────── */
-html.desktop-panel,
-html.desktop-panel body {
-  background: transparent !important;
-  height: 100%;
+html.desktop-main, html.desktop-main body { background: #eef0f5; }
+html.mica, html.mica body { background: transparent !important; }
+html.desktop-main .liquid-bg { display: none; }
+.dt-login .min-h-screen { min-height: 100%; }
+html.mica .liquid-bg { opacity: 0.55; }
+
+.dt-app {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
 }
-html.desktop-panel #root { height: 100%; }
-
-.dp-frame {
-  position: fixed;
-  top: 10px; bottom: 10px; left: 18px; right: 10px;
-  border-radius: 22px;
-  overflow: hidden;
-  background: #f4f6fb;
-  box-shadow:
-    0 30px 60px -22px rgba(30,41,99,0.5),
-    0 10px 24px -14px rgba(30,41,99,0.35),
-    inset 0 0 0 1px rgba(255,255,255,0.75);
-  outline: 1px solid rgba(99,102,241,0.14);
-  transform-origin: 100% 50%;
-  will-change: transform, opacity, filter;
-}
-.dp-in {
-  transform: translate3d(0, 0, 0);
-  opacity: 1;
-  filter: none;
-  transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out, filter 260ms ease-out;
-}
-/* "Einrollen": nach rechts raus, leicht gedreht und weichgezeichnet */
-.dp-out {
-  transform: perspective(1400px) translate3d(calc(100% + 30px), 0, 0) rotateY(-18deg) scale(0.96);
-  opacity: 0;
-  filter: blur(10px) saturate(1.3);
-  pointer-events: none;
-  transition: transform 280ms cubic-bezier(0.7, 0, 0.84, 0), opacity 260ms ease-in, filter 260ms ease-in;
-}
-.dp-resizing, .dp-resizing * { cursor: ew-resize !important; user-select: none; }
-
-.dp-scroll {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-html.desktop-panel .dp-scroll .min-h-screen { min-height: 100%; }
-
-/* Countdown bis zum automatischen Einfahren – haarfein oben am Panel */
-.dp-leaving {
-  position: absolute;
-  left: 22px; right: 22px; top: 0;
-  height: 2px;
-  z-index: 60;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, #6366f1, #38bdf8);
-  transform-origin: center;
-  animation-name: dp-leave;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-  pointer-events: none;
-}
-@keyframes dp-leave { from { transform: scaleX(1); opacity: 1; } to { transform: scaleX(0); opacity: 0.4; } }
-
-/* Schwebende Mini-Steuerung (z. B. auf der Anmeldeseite) */
-.dp-floating-controls {
-  position: absolute;
-  top: 10px; right: 10px;
-  z-index: 60;
+/* Titelleiste: 48px = TITLEBAR_HEIGHT in desktop/main.js, rechts Platz für
+   die nativen Fensterknöpfe */
+.dt-titlebar {
+  height: 48px;
   display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 14px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 150px 0 14px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.dt-titlebar input, .dt-titlebar button, .dt-titlebar a { -webkit-app-region: no-drag; }
+.dt-search {
+  width: 100%;
+  height: 32px;
+  padding: 0 32px 0 34px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #1e293b;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(15,23,42,0.08);
+  outline: none;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dt-search::placeholder { color: #94a3b8; }
+.dt-search:hover { background: rgba(255,255,255,0.9); }
+.dt-search:focus { background: #fff; border-color: rgba(99,102,241,0.55); box-shadow: 0 0 0 3px rgba(99,102,241,0.16); }
+
+.dt-body {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  min-height: 0;
 }
 
-.dp-grip {
-  position: absolute;
-  left: 0; top: 60px; bottom: 0;
-  width: 7px;
-  z-index: 46;
-  cursor: ew-resize;
+/* Navigation */
+.dt-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 10px 10px;
 }
-.dp-grip::after {
+.dt-nav {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.dt-nav:hover { background: rgba(15,23,42,0.05); }
+.dt-nav-active { background: rgba(255,255,255,0.85); color: #1e1b4b; font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,0.06); }
+.dt-nav-active::before {
   content: "";
   position: absolute;
-  left: 2px; top: 50%;
-  width: 4px; height: 44px;
-  margin-top: -22px;
+  left: 0; top: 10px; bottom: 10px;
+  width: 3px;
   border-radius: 9999px;
-  background: rgba(99,102,241,0.45);
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  background: #4f46e5;
 }
-.dp-grip:hover::after, .dp-resizing .dp-grip::after { opacity: 1; }
+.dt-nav-count { font-size: 11px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.dt-nav-badge {
+  min-width: 18px; height: 18px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 18px;
+  text-align: center;
+}
+.dt-nav-section {
+  margin: 16px 10px 4px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
 
-/* Eigenes Fenster: Titelleiste zum Verschieben, rechts Platz für die
-   Windows-Fensterknöpfe (Titelleisten-Overlay) */
+/* Inhaltsflächen */
+.dt-surface {
+  min-height: 0;
+  background: rgba(252,252,253,0.94);
+  border: 1px solid rgba(15,23,42,0.07);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.dt-page { margin: 0 10px 10px 0; border-radius: 12px; overflow: hidden; }
+.dt-split {
+  display: grid;
+  grid-template-columns: minmax(330px, 1fr) minmax(400px, 1.15fr);
+  gap: 8px;
+  min-height: 0;
+  margin: 0 10px 10px 0;
+}
+.dt-list-pane, .dt-detail-pane {
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.dt-detail-pane { background: rgba(255,255,255,0.97); }
+
+/* Listenzeilen */
+.dt-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 4px 8px 4px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: default;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+.dt-row:hover { background: rgba(15,23,42,0.035); }
+.dt-row-selected, .dt-row-selected:hover {
+  background: rgba(99,102,241,0.09);
+  border-color: rgba(99,102,241,0.22);
+}
+.dt-row-actions {
+  position: absolute;
+  right: 4px; top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  align-items: center;
+  gap: 1px;
+  padding-left: 22px;
+  background: linear-gradient(90deg, rgba(243,244,246,0), #f3f4f6 18px);
+}
+.dt-row:hover .dt-row-actions { display: flex; }
+.dt-row-selected .dt-row-actions { background: linear-gradient(90deg, rgba(238,238,252,0), #eeeefc 18px); }
+.dt-fav-idle { color: #cbd5e1; }
+.dt-row:hover .dt-fav-idle { color: #94a3b8; }
+.dt-check {
+  width: 20px; height: 20px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  border: 2px solid #cbd5e1;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.dt-check:hover { border-color: #10b981; background: rgba(16,185,129,0.08); }
+.dt-check-done, .dt-check-done:hover { background: #10b981; border-color: #10b981; }
+.dt-row-done { opacity: 0.7; }
+
+.dt-card {
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(15,23,42,0.07);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+@keyframes dt-undo { from { width: 100%; } to { width: 0%; } }
+
+/* Schmale Fenster: Navigation nur mit Symbolen */
+@media (max-width: 1100px) {
+  .dt-body { grid-template-columns: 64px minmax(0, 1fr); }
+  .dt-sidebar { padding: 4px 8px 10px; }
+  .dt-nav { justify-content: center; padding: 0; }
+  .dt-nav-label, .dt-nav-count, .dt-nav-section { display: none; }
+  .dt-nav-badge { position: absolute; top: 2px; right: 4px; }
+  .dt-titlebar-brand { width: auto !important; }
+  .dt-split { grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.1fr); }
+}
+
+/* Eigenes Fenster (2do / Notiz): Titelleiste mit Platz für die Fensterknöpfe */
 .win-titlebar {
-  height: 44px;
+  height: 48px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -394,8 +485,6 @@ html.desktop-panel .dp-scroll .min-h-screen { min-height: 100%; }
   user-select: none;
 }
 .win-titlebar button, .win-titlebar input, .win-titlebar a { -webkit-app-region: no-drag; }
-html.mica, html.mica body { background: transparent !important; }
-html.mica .liquid-bg { opacity: 0.55; }
 
 .dp-kbd {
   display: inline-flex; align-items: center;
@@ -409,38 +498,6 @@ html.mica .liquid-bg { opacity: 0.55; }
   white-space: nowrap;
 }
 .dp-kbd-sm { font-size: 10px; padding: 3px 5px; border-radius: 6px; }
-
-.dp-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  background: rgba(15,23,42,0.16);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  animation: dp-fade 180ms ease-out;
-}
-.dp-sheet {
-  flex: 1;
-  margin: 10px 8px 8px;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-radius: 20px;
-  background: linear-gradient(165deg, rgba(250,251,255,0.98), rgba(238,242,255,0.98));
-  box-shadow: 0 24px 50px -20px rgba(30,41,99,0.45), inset 0 0 0 1px rgba(255,255,255,0.8);
-  animation: dp-sheet-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes dp-fade { from { opacity: 0; } }
-@keyframes dp-sheet-in { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
-
-.dp-card {
-  border-radius: 16px;
-  padding: 10px 14px;
-  background: rgba(255,255,255,0.75);
-  border: 1px solid rgba(255,255,255,0.95);
-  box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -18px rgba(30,41,99,0.35);
-}
 
 /* Windows-11-Schalter */
 .dp-switch {

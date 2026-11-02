@@ -12,17 +12,23 @@ import {
  *
  * path: Firestore-Pfad als Segmente, null = keine Sperre (z. B. ohne Dokument)
  *
- * lockState: none | pending | mine | other | offline (Sperre nicht möglich,
- * man arbeitet ohne – Firestore synchronisiert später)
+ * lazy: Sperre erst beim ersten Bearbeiten holen (activate()) und nach idleMs
+ * ohne Eingabe wieder freigeben – für den Desktop-Detailbereich, in dem ein
+ * 2do schon beim bloßen Auswählen offen ist.
+ *
+ * lockState: none | pending | idle (lazy: frei, noch nicht gesperrt) | mine |
+ * other | offline (Sperre nicht möglich, man arbeitet ohne – Firestore
+ * synchronisiert später)
  * live: aktueller Stand des Dokuments (für das Mitlaufen im Lesemodus)
  * otherLock: die fremde Sperre ({ uid, name, session }) im Zustand "other"
+ * activate(): Bearbeitung beginnt (lazy) bzw. Aktivität melden
  * takeOver(): eigene Sperre aus einem anderen Fenster/Gerät übernehmen
  */
-export default function useEditLock({ path, uid, name, initial = null }) {
+export default function useEditLock({ path, uid, name, initial = null, lazy = false, idleMs = 120000 }) {
   const key = path ? path.join("/") : null;
   const [live, setLive] = useState(initial);
   const [lockState, setLockState] = useState(() =>
-    !key ? "none" : lockedByOther(initial) ? "other" : "pending");
+    !key ? "none" : lockedByOther(initial) ? "other" : lazy ? "idle" : "pending");
   const liveRef = useRef(live);
   const stateRef = useRef(lockState);
   const nameRef = useRef(name);
@@ -40,6 +46,7 @@ export default function useEditLock({ path, uid, name, initial = null }) {
     let cancelled = false;
     let holding = false;
     let busy = false;
+    let lastActivity = Date.now();
     const set = (s) => { if (!cancelled) setLockState(s); };
 
     const tryAcquire = async (force = false) => {
@@ -61,7 +68,13 @@ export default function useEditLock({ path, uid, name, initial = null }) {
         busy = false;
       }
     };
-    actionsRef.current = { takeOver: () => tryAcquire(true) };
+    actionsRef.current = {
+      takeOver: () => tryAcquire(true),
+      activate: () => {
+        lastActivity = Date.now();
+        if (!holding && stateRef.current !== "other") tryAcquire();
+      },
+    };
 
     const unsub = subscribeDocLive(segments, (data) => {
       if (cancelled || !data) return;
@@ -71,15 +84,26 @@ export default function useEditLock({ path, uid, name, initial = null }) {
         holding = false;
         set("other");
       } else if (stateRef.current === "other" && !lockedByOther(data)) {
-        tryAcquire();
+        if (lazy) set("idle");
+        else tryAcquire();
+      } else if ((stateRef.current === "idle" || stateRef.current === "offline") && !holding && lockedByOther(data)) {
+        // jemand anderes hat angefangen zu bearbeiten
+        set("other");
       }
     });
-    tryAcquire();
+    if (!lazy) tryAcquire();
 
     // Alle 5 s: eigene Sperre regelmäßig erneuern bzw. – falls keine gehalten
     // wird – neu versuchen (fremde Sperre abgelaufen, wieder online)
     let lastBeat = Date.now();
     const timer = setInterval(async () => {
+      if (holding && lazy && Date.now() - lastActivity > idleMs) {
+        // länger nichts bearbeitet → wieder freigeben (Ansehen sperrt nicht)
+        holding = false;
+        releaseEditLock(segments);
+        set("idle");
+        return;
+      }
       if (holding) {
         if (Date.now() - lastBeat < LOCK_HEARTBEAT_MS) return;
         lastBeat = Date.now();
@@ -89,7 +113,7 @@ export default function useEditLock({ path, uid, name, initial = null }) {
             set(lockedByOther(liveRef.current) ? "other" : "offline");
           }
         } catch { /* offline – Sperre verfällt ggf., wird neu geholt */ }
-      } else if (!lockedByOther(liveRef.current)) {
+      } else if (!lazy && !lockedByOther(liveRef.current)) {
         lastBeat = Date.now();
         tryAcquire();
       }
@@ -106,8 +130,12 @@ export default function useEditLock({ path, uid, name, initial = null }) {
       unsub();
       if (holding) releaseEditLock(segments);
     };
-  }, [key, uid]);
+  }, [key, uid, lazy, idleMs]);
 
   const otherLock = lockState === "other" ? (lockedByOther(live) || live?.editLock || null) : null;
-  return { lockState, live, otherLock, takeOver: () => actionsRef.current?.takeOver() };
+  return {
+    lockState, live, otherLock,
+    takeOver: () => actionsRef.current?.takeOver(),
+    activate: () => actionsRef.current?.activate(),
+  };
 }

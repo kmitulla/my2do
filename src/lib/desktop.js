@@ -1,7 +1,7 @@
 // Desktop-Hülle (Electron, siehe desktop/preload.js). Im Browser undefined.
 export const desktop = typeof window !== "undefined" ? window.my2doDesktop : undefined;
 export const isDesktop = !!desktop;
-// "panel" = ausfahrbare Seitenleiste, "detached" = eigenes 2do-/Notiz-Fenster,
+// "main" = Hauptfenster, "detached" = eigenes 2do-/Notiz-Fenster,
 // null = Browser
 export const windowKind = desktop?.windowKind || null;
 
@@ -20,7 +20,7 @@ export function openInWindow(route, kind, title) {
 // Eigene Fenster nur mit Maus und genug Platz (nicht auf dem Handy) –
 // und nicht aus einem Fenster heraus
 export const canOpenWindows = () =>
-  windowKind === "panel" ||
+  windowKind === "main" ||
   (!desktop && typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 900px) and (pointer: fine)").matches);
 
 // Befehle an die App (Tastenkürzel, Tray, Erinnerungen) – Dashboard & Co.

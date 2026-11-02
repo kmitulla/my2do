@@ -37,11 +37,14 @@ const Label = ({ children, icon }) => (
 /**
  * Editor für ein 2do.
  * layout "modal": Blatt im Dashboard (einspaltig) · "window": eigenes Fenster
- * (zweispaltig: links Titel + Beschreibung, rechts Eigenschaften).
+ * (zweispaltig: links Titel + Beschreibung, rechts Eigenschaften) ·
+ * "pane": Detailbereich der Desktop-App (speichert automatisch, sperrt erst
+ * beim Bearbeiten, übernimmt Änderungen aus der Liste).
  */
 export default function TodoDetail({ todo, categories, onClose, onDelete, onMinimize, initialDraft, layout = "modal" }) {
   const { user, userProfile } = useFirebaseAuth();
   const isWindow = layout === "window";
+  const isPane = layout === "pane";
   const [form, setForm] = useState(
     initialDraft
       ? { ...initialDraft }
@@ -79,7 +82,9 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // egal ob eine andere Person (geteilt), ein zweites Fenster oder ein
   // anderes Gerät es gerade offen hat
   const lockPath = useMemo(() => todoLockPath(user.uid, { id: todo.id, sharedId }), [user.uid, todo.id, sharedId]);
-  const { lockState, live, otherLock, takeOver } = useEditLock({ path: lockPath, uid: user.uid, name: myName, initial: todo });
+  const { lockState, live, otherLock, takeOver, activate } = useEditLock({
+    path: lockPath, uid: user.uid, name: myName, initial: todo, lazy: isPane,
+  });
   // Bei geteilten 2dos zusätzlich das eigene Dokument (Tags, Wiedervorlage)
   const [ownLive, setOwnLive] = useState(null);
   useEffect(() => {
@@ -97,10 +102,14 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // Track if dirty (for auto-save vs X close)
   const isDirtyRef = useRef(false);
   const richEditorRef = useRef(null);
+  const formRef = useRef(form);
+  formRef.current = form;
+  // Detailbereich: "saved" | "pending" | "blocked"
+  const [saveState, setSaveState] = useState("saved");
 
   // Block horizontal scroll on the modal completely
   useEffect(() => {
-    if (isWindow) return;
+    if (isWindow || isPane) return;
     const handler = (e) => {
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
@@ -121,16 +130,22 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       document.removeEventListener("touchstart", down);
       document.removeEventListener("touchmove", handler);
     };
-  }, [isWindow]);
+  }, [isWindow, isPane]);
 
   // Solange woanders bearbeitet wird: Inhalt live mitlaufen lassen, damit man
-  // nach der Freigabe auf dem neuesten Stand weiterarbeitet
+  // nach der Freigabe auf dem neuesten Stand weiterarbeitet. Im Detailbereich
+  // außerdem Änderungen aus der Liste (Status, Prio, Wiedervorlage …)
+  // übernehmen, solange hier nichts ungespeichert ist.
   useEffect(() => {
-    if (lockState !== "other" || !live) return;
+    if (!live) return;
+    const following = lockState === "other";
+    if (!following && !(isPane && !isDirtyRef.current)) return;
     const { common, personal } = splitSharedData(live);
     const personalLive = sharedId ? (ownLive ? splitSharedData(ownLive).personal : {}) : personal;
-    setForm((f) => ({ ...f, ...common, ...(allLocked ? personalLive : {}) }));
-  }, [live, ownLive, lockState, allLocked, sharedId]);
+    const withPersonal = following ? allLocked : true;
+    setForm((f) => ({ ...f, ...common, ...(withPersonal ? personalLive : {}) }));
+    if (isPane && personalLive.favorite !== undefined) setFavorite(!!personalLive.favorite);
+  }, [live, ownLive, lockState, allLocked, sharedId, isPane]);
 
   useEffect(() => {
     if (initialDraft) {
@@ -147,10 +162,12 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   const set = (k, v) => {
     setForm((f) => ({ ...f, [k]: v }));
     isDirtyRef.current = true;
+    // Detailbereich: erst jetzt (beim Bearbeiten) sperren
+    if (isPane) activate();
   };
 
-  const buildSaveData = () => {
-    const data = { ...form };
+  const buildSaveData = (f = form) => {
+    const data = { ...f };
     // Favorit wird separat (sofort) gespeichert — ein älterer Formular- oder
     // Entwurfsstand darf ihn beim Speichern nicht überschreiben
     delete data.favorite;
@@ -164,10 +181,12 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   };
 
   // Gesperrt → nur die persönlichen Felder (Tags, Wiedervorlage) speichern
-  const persist = () => {
+  const persist = (f = form) => {
     if (allLocked) return false;
-    const ok = updateTodo(user.uid, todo.id, buildSaveData(), { personalOnly: commonLocked });
-    if (!ok) {
+    const ok = updateTodo(user.uid, todo.id, buildSaveData(f), { personalOnly: commonLocked });
+    if (!ok && isPane) {
+      setSaveState("blocked");
+    } else if (!ok) {
       const lock = lockedByOther(liveRef.current);
       alert(lock?.uid === user.uid
         ? "Dieses 2do ist gerade in einem anderen Fenster geöffnet – die Änderungen konnten nicht gespeichert werden."
@@ -176,8 +195,28 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     return ok;
   };
 
+  // Detailbereich: automatisch speichern, kurz nachdem man aufhört zu tippen,
+  // und spätestens beim Wechsel auf ein anderes 2do
+  const flushRef = useRef(null);
+  flushRef.current = () => {
+    if (!isDirtyRef.current) return;
+    isDirtyRef.current = false;
+    if (persist(formRef.current)) {
+      setSaveState("saved");
+      setLastUpdated(new Date());
+    }
+  };
+  useEffect(() => {
+    if (!isPane || !isDirtyRef.current) return;
+    setSaveState("pending");
+    const t = setTimeout(() => flushRef.current(), 700);
+    return () => clearTimeout(t);
+  }, [form, isPane]);
+  useEffect(() => () => { if (isPane) flushRef.current(); }, [isPane]);
+
   // Speichern & schließen
   const save = async () => {
+    if (isPane) { flushRef.current(); onClose(); return; }
     if (allLocked) { onClose(); return; }
     setSaving(true);
     const ok = persist();
@@ -187,6 +226,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
 
   // Speichern ohne zu schließen
   const saveOnly = async () => {
+    if (isPane) { flushRef.current(); return; }
     if (savingStay || saving || allLocked) return;
     setSavingStay(true);
     persist();
@@ -206,7 +246,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // schließen (gibt die Sperre frei) – das Fenster übernimmt
   const canPopOut = !isWindow && canOpenWindows();
   const popOut = () => {
-    if (isDirtyRef.current && !allLocked) persist();
+    if (isDirtyRef.current && !allLocked) persist(formRef.current);
     isDirtyRef.current = false;
     openInWindow(`/todo/${todo.id}`, "todo", form.title);
     onClose();
@@ -375,7 +415,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // Tastenkürzel im Editor: Strg+S speichern, Strg+Enter speichern & schließen,
   // Esc schließen (ungespeicherte Änderungen werden vorher gespeichert)
   const keyActionsRef = useRef({});
-  keyActionsRef.current = { saveOnly, save, showShare, closeShare };
+  keyActionsRef.current = { saveOnly, save, showShare, closeShare, popOut: canPopOut ? popOut : null };
   useEffect(() => {
     const onKey = (e) => {
       const a = keyActionsRef.current;
@@ -383,19 +423,22 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         a.saveOnly();
+      } else if (mod && e.shiftKey && e.key === "Enter" && a.popOut) {
+        e.preventDefault();
+        a.popOut();
       } else if (mod && e.key === "Enter") {
         e.preventDefault();
         a.save();
       } else if (e.key === "Escape" && !e.defaultPrevented) {
         e.preventDefault();
         if (a.showShare) a.closeShare();
-        else if (isDirtyRef.current) a.save();
+        else if (isDirtyRef.current || isPane) a.save();
         else onClose();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, isPane]);
 
   // ── Bausteine ──────────────────────────────────────────────────────────────
   const lockBadge = sharedId && (
@@ -409,7 +452,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   );
 
   const membersBlock = sharedId && (
-    <div className={isWindow ? "glass rounded-[18px] p-3.5" : "rounded-2xl bg-sky-50/70 border border-sky-100 px-3 py-2.5"}>
+    <div className={isWindow || isPane ? "glass rounded-[16px] p-3" : "rounded-2xl bg-sky-50/70 border border-sky-100 px-3 py-2.5"}>
       <div className="flex items-center gap-2">
         <span className="text-sky-500 flex-shrink-0"><Users size={14} /></span>
         <span className="section-label flex-1">Mitbearbeiter</span>
@@ -530,7 +573,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     </div>
   );
 
-  const card = (content) => (isWindow ? <div className="glass rounded-[18px] p-3.5">{content}</div> : content);
+  const card = (content) => (isWindow || isPane ? <div className="glass rounded-[16px] p-3">{content}</div> : content);
 
   const statusBlock = card(
     <fieldset disabled={commonLocked} className="min-w-0 disabled:opacity-60">
@@ -564,7 +607,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     </fieldset>
   );
 
-  const titleBlock = isWindow ? (
+  const titleBlock = isWindow || isPane ? (
     <fieldset disabled={commonLocked} className="min-w-0">
       <input value={form.title || ""} onChange={(e) => set("title", e.target.value)} placeholder="Titel"
         className="w-full px-1 py-1 bg-transparent border-0 border-b-2 border-transparent focus:border-indigo-300 focus:outline-none text-2xl font-semibold text-slate-800 placeholder-slate-300 tracking-tight disabled:opacity-70" />
@@ -585,7 +628,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         value={form.description || ""}
         onChange={(v) => set("description", v)}
         placeholder="Beschreibung eingeben…"
-        minHeight={isWindow ? 460 : 200}
+        minHeight={isWindow ? 460 : isPane ? 260 : 200}
         readOnly={commonLocked}
       />
     </div>
@@ -650,7 +693,7 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   );
 
   const exportBlock = card(
-    <div className={isWindow ? "" : "border-t border-slate-200/60 pt-4"}>
+    <div className={isWindow || isPane ? "" : "border-t border-slate-200/60 pt-4"}>
       <Label icon={<Mail size={12} />}>Weitergeben</Label>
       <div className="grid grid-cols-3 gap-2">
         <button onClick={openEmailClient} title="E-Mail mit Titel als Betreff"
@@ -721,6 +764,68 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
       </button>
     </div>
   );
+
+  // ── Desktop-Detailbereich ──────────────────────────────────────────────────
+  if (isPane) {
+    const saveLabel = commonLocked ? "nur lesen"
+      : saveState === "pending" ? "speichert…"
+      : saveState === "blocked" ? "gesperrt – nicht gespeichert"
+      : "gespeichert";
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex-shrink-0 h-12 px-3 flex items-center gap-1 border-b border-slate-200/70">
+          <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ml-1 ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
+          <span className={`ml-2 text-[11px] font-semibold ${
+            commonLocked ? "text-amber-600" : saveState === "pending" ? "text-slate-400" : saveState === "blocked" ? "text-red-500" : "text-emerald-600"
+          }`}>
+            {saveState === "saved" && !commonLocked ? "✓ " : ""}{saveLabel}
+          </span>
+          {lockState === "mine" && <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700">du bearbeitest</span>}
+          <span className="flex-1" />
+          {headerActions}
+          {canPopOut && (
+            <button onClick={popOut} title="In eigenem Fenster öffnen (Strg+Umschalt+Eingabe)" className="btn-icon">
+              <AppWindow size={17} />
+            </button>
+          )}
+          <button onClick={save} title="Schließen (Esc)" className="btn-icon"><X size={17} /></button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-5 pt-4 pb-6 space-y-3">
+            {titleBlock}
+            <TimestampInfo createdAt={todo.createdAt} updatedAt={live?.updatedAt || lastUpdated} className="px-1 -mt-1" />
+            {lockBanner}
+            {sharePanel}
+            <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(250px,1fr))]">
+              {statusBlock}
+              {prioBlock}
+              {deadlineBlock}
+              {wiedervorlageBlock}
+            </div>
+            {tagsBlock}
+            {descriptionBlock}
+            {membersBlock}
+            {exportBlock}
+          </div>
+        </div>
+        <div className="flex-shrink-0 border-t border-slate-200/70 px-4 py-2.5 flex items-center gap-2">
+          <button onClick={insertTimestampInDescription} title="Zeitmarke einfügen (Strg+T)" disabled={commonLocked}
+            className="btn-icon text-indigo-500 disabled:opacity-40"><Clock size={16} /></button>
+          <span className="flex-1" />
+          <button ref={archiveBtnRef} onClick={handleArchive} disabled={commonLocked}
+            title={sharedId ? "Archiviert das 2do für alle Mitbearbeiter" : "Archivieren"}
+            className={`px-3.5 py-2 rounded-xl text-[13px] font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 ${confirmArchive ? "bg-amber-500 text-white" : "text-amber-700 hover:bg-amber-50"}`}>
+            <Archive size={15} /> {confirmArchive ? "Wirklich archivieren?" : "Archivieren"}
+          </button>
+          <button ref={deleteBtnRef} onClick={handleDelete}
+            title={sharedId ? "Nur für dich entfernen – die anderen Mitbearbeiter behalten das 2do" : "Löschen"}
+            className={`px-3.5 py-2 rounded-xl text-[13px] font-medium transition-all flex items-center gap-1.5 ${confirmDelete ? "bg-red-500 text-white" : "text-red-600 hover:bg-red-50"}`}>
+            <Trash2 size={15} /> {confirmDelete ? "Wirklich?" : sharedId ? "Entfernen" : "Löschen"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── Eigenes Fenster: zweispaltig ───────────────────────────────────────────
   if (isWindow) {
