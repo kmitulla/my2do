@@ -21,12 +21,14 @@ import {
  * synchronisiert später)
  * live: aktueller Stand des Dokuments (für das Mitlaufen im Lesemodus)
  * otherLock: die fremde Sperre ({ uid, name, session }) im Zustand "other"
+ * gone: Dokument wurde gelöscht (war vorher vorhanden)
  * activate(): Bearbeitung beginnt (lazy) bzw. Aktivität melden
  * takeOver(): eigene Sperre aus einem anderen Fenster/Gerät übernehmen
  */
 export default function useEditLock({ path, uid, name, initial = null, lazy = false, idleMs = 120000 }) {
   const key = path ? path.join("/") : null;
   const [live, setLive] = useState(initial);
+  const [gone, setGone] = useState(false);
   const [lockState, setLockState] = useState(() =>
     !key ? "none" : lockedByOther(initial) ? "other" : lazy ? "idle" : "pending");
   const liveRef = useRef(live);
@@ -76,8 +78,15 @@ export default function useEditLock({ path, uid, name, initial = null, lazy = fa
       },
     };
 
+    let seen = !!initial;
     const unsub = subscribeDocLive(segments, (data) => {
-      if (cancelled || !data) return;
+      if (cancelled) return;
+      if (!data) {
+        if (seen) setGone(true);
+        return;
+      }
+      seen = true;
+      setGone(false);
       setLive(data);
       if (stateRef.current === "mine" && lockedByOther(data)) {
         // Sperre verloren (übernommen oder nach Standby abgelaufen) → nur lesen
@@ -134,7 +143,7 @@ export default function useEditLock({ path, uid, name, initial = null, lazy = fa
 
   const otherLock = lockState === "other" ? (lockedByOther(live) || live?.editLock || null) : null;
   return {
-    lockState, live, otherLock,
+    lockState, live, otherLock, gone,
     takeOver: () => actionsRef.current?.takeOver(),
     activate: () => actionsRef.current?.activate(),
   };

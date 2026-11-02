@@ -341,9 +341,12 @@ function walkList(listEl, style, sink, ctx, level) {
   }
 
   const depth = Math.min(level, 4);
+  // Checkliste aus dem Editor: Kästchen statt Aufzählungszeichen
+  const checklist = !!listEl.classList?.contains("checklist");
   for (const li of Array.from(listEl.children)) {
     if (li.tagName !== "LI") continue;
     const liStyle = mergeStyle(style, li);
+    if (checklist) sink.push(new TextRun({ text: li.dataset?.checked === "true" ? "☑ " : "☐ ", ...runProps(liStyle) }));
     const nested = [];
     for (const child of Array.from(li.childNodes)) {
       if (child.nodeType === 1 && (child.tagName === "UL" || child.tagName === "OL")) {
@@ -352,9 +355,11 @@ function walkList(listEl, style, sink, ctx, level) {
       }
       walkNode(child, liStyle, sink, ctx);
     }
-    sink.flush(ordered
-      ? { numbering: { reference, level: depth }, spacing: { after: 40 } }
-      : { bullet: { level: depth }, spacing: { after: 40 } });
+    sink.flush(checklist
+      ? { indent: { left: 360 * (depth + 1) }, spacing: { after: 40 } }
+      : ordered
+        ? { numbering: { reference, level: depth }, spacing: { after: 40 } }
+        : { bullet: { level: depth }, spacing: { after: 40 } });
     for (const child of nested) walkList(child, liStyle, sink, ctx, level + 1);
   }
 }

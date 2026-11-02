@@ -392,7 +392,7 @@ export default function DesktopWorkspace() {
         ) : (
           <section className="dt-surface dt-page">
             {view === "notes" ? (
-              <div className="h-full p-3"><NotesPanel fill /></div>
+              <NotesPanel fill />
             ) : (
               <div className="h-full overflow-y-auto">
                 <div className={`mx-auto px-6 py-5 ${view === "settings" ? "max-w-5xl" : "max-w-4xl"}`}>

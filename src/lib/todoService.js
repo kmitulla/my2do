@@ -493,21 +493,27 @@ export const subscribePages = (uid, bookId, sectionId, callback) => {
   return withPendingCleanup(key, unsub);
 };
 
+// Alle Notizbücher mit Abschnitten und Seiten (Suche) – parallel geladen
 export const getAllNotebookData = async (uid) => {
   const booksSnap = await getDocs(notebooksCol(uid));
-  const books = [];
-  for (const bDoc of booksSnap.docs) {
-    const book = { id: bDoc.id, ...bDoc.data(), sections: [] };
+  return Promise.all(booksSnap.docs.map(async (bDoc) => {
     const sectSnap = await getDocs(sectionsCol(uid, bDoc.id));
-    for (const sDoc of sectSnap.docs) {
-      const section = { id: sDoc.id, ...sDoc.data(), pages: [] };
+    const sections = await Promise.all(sectSnap.docs.map(async (sDoc) => {
       const pagesSnap = await getDocs(pagesCol(uid, bDoc.id, sDoc.id));
-      section.pages = pagesSnap.docs.map((p) => ({ id: p.id, ...p.data() }));
-      book.sections.push(section);
-    }
-    books.push(book);
+      return { id: sDoc.id, ...sDoc.data(), pages: pagesSnap.docs.map((p) => ({ id: p.id, ...docData(p) })) };
+    }));
+    return { id: bDoc.id, ...bDoc.data(), sections };
+  }));
+};
+
+// Einzelne Notizseite laden (zuletzt geöffnete Seiten); null = gibt es nicht mehr
+export const getPage = async (uid, bookId, sectionId, pageId) => {
+  try {
+    const snap = await getDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId));
+    return snap.exists() ? { id: snap.id, ...docData(snap) } : null;
+  } catch {
+    return null;
   }
-  return books;
 };
 
 // Namen von Notizbuch + Abschnitt (Kopfzeile im eigenen Notiz-Fenster)

@@ -1,279 +1,319 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, {
+  useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useDeferredValue,
+} from "react";
+import { createPortal } from "react-dom";
 import { useFirebaseAuth } from "@/lib/firebaseAuth";
 import {
   subscribeNotebooks, addNotebook, updateNotebook, deleteNotebook,
   subscribeSections, addSection, updateSection, deleteSection,
-  subscribePages, addPage, updatePage, deletePage,
-  copyPage, movePage, copySection, moveSection,
+  subscribePages, addPage, updatePage, deletePage, getPage, getNoteBreadcrumb,
+  copyPage, movePage, copySection, moveSection, getAllNotebookData,
   saveNotesTreeState, getNotesTreeState, pageLockPath,
 } from "@/lib/todoService";
 import { canOpenWindows, openInWindow } from "@/lib/desktop";
 import useEditLock from "@/hooks/useEditLock";
-import { AppWindow, Lock } from "lucide-react";
+import {
+  AppWindow, Lock, ChevronRight, NotebookText, Folder, FileText, Plus, MoreHorizontal,
+  Search, X, Maximize2, Minimize2, ArrowLeft, Pencil, Trash2, FolderInput, FilePlus2,
+  BookPlus, FolderPlus, PanelLeftClose, PanelLeftOpen, FileDown, History,
+} from "lucide-react";
 import RichEditor from "./RichEditor";
 import SyncIndicator from "./SyncIndicator";
 import TimestampInfo from "./TimestampInfo";
 
-// ── SVG Icons ─────────────────────────────────────────────────────────────────
-const ChevronIcon = ({ open }) => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-    strokeLinecap="round" strokeLinejoin="round"
-    className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}>
-    <polyline points="9 18 15 12 9 6" />
-  </svg>
-);
-const TrashIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
-  </svg>
-);
-const PlusIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-  </svg>
-);
-const BookIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-  </svg>
-);
-const FolderIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-  </svg>
-);
-const FileIcon = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-  </svg>
-);
-const FullscreenIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-  </svg>
-);
-const ExitFullscreenIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
-  </svg>
-);
-const DotsIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
-  </svg>
-);
-const WordIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-    <path d="M8 13l1.4 4.5L11 13l1.6 4.5L14 13" strokeWidth="1.6"/>
-  </svg>
-);
+const UNTITLED = "Unbenannte Seite";
 
-// ── Inline editable title ─────────────────────────────────────────────────────
-function InlineEdit({ value, onSave, className = "" }) {
-  const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(value);
-  const ref = useRef(null);
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
-  useEffect(() => { setVal(value); }, [value]);
-  const save = () => {
-    setEditing(false);
-    if (val.trim() && val.trim() !== value) onSave(val.trim());
-    else setVal(value);
-  };
-  if (editing) return (
-    <input ref={ref} value={val} onChange={(e) => setVal(e.target.value)}
-      onBlur={save}
-      onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setVal(value); setEditing(false); } }}
-      className={`bg-transparent border-b border-indigo-400 outline-none w-full ${className}`} />
-  );
-  return (
-    <span onDoubleClick={() => setEditing(true)} className={`cursor-pointer ${className}`} title="Doppelklick zum Umbenennen">
-      {value}
-    </span>
-  );
-}
-
-// ── Move/Copy Picker ──────────────────────────────────────────────────────────
-function MoveCopyModal({ uid, type, label, notebooks, currentBookId, currentSectionId, pageId, sectionId, onDone, onClose }) {
-  const [targetBookId, setTargetBookId] = useState(currentBookId);
-  const [targetSections, setTargetSections] = useState([]);
-  const [targetSectionId, setTargetSectionId] = useState(currentSectionId || "");
-  const [busy, setBusy] = useState(false);
-
-  // Load sections reactively when targetBook changes (for page moves)
-  useEffect(() => {
-    if (type !== "page") return;
-    let unsub;
-    import("@/lib/todoService").then(({ subscribeSections }) => {
-      unsub = subscribeSections(uid, targetBookId, (secs) => {
-        setTargetSections(secs.filter(s => !s.parentSectionId)); // top-level only for simplicity
-        if (!secs.find(s => s.id === targetSectionId)) setTargetSectionId(secs[0]?.id || "");
-      });
-    });
-    return () => unsub?.();
-  }, [targetBookId, uid, type]);
-
-  const handleAction = async (action) => {
-    setBusy(true);
+// ── Kleine Helfer ─────────────────────────────────────────────────────────────
+const store = {
+  get(key, fallback) {
     try {
-      if (type === "page") {
-        if (action === "move") await movePage(uid, currentBookId, currentSectionId, pageId, targetBookId, targetSectionId);
-        else await copyPage(uid, currentBookId, currentSectionId, pageId, targetBookId, targetSectionId);
-      } else if (type === "section") {
-        if (action === "move") await moveSection(uid, currentBookId, sectionId, targetBookId);
-        else await copySection(uid, currentBookId, sectionId, targetBookId, null);
-      }
-      onDone();
-    } finally {
-      setBusy(false);
-    }
-  };
+      const v = localStorage.getItem(key);
+      return v == null ? fallback : JSON.parse(v);
+    } catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* privat / voll */ }
+  },
+};
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ background: "rgba(15,23,42,0.5)", backdropFilter: "blur(8px)" }}>
-      <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm mx-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-slate-800 flex-1 truncate">„{label}" verschieben / kopieren</h3>
-          <SyncIndicator compact className="mr-2" />
-          <button onClick={onClose} className="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
+// Zuletzt geöffnete Seiten (pro Gerät) – für "weiter, wo ich war" und die Startansicht
+const recentKey = (uid) => `my2do.notes.recent.${uid}`;
+const loadRecents = (uid) => {
+  const list = store.get(recentKey(uid), []);
+  return Array.isArray(list) ? list.filter((r) => r?.pageId && r.bookId && r.sectionId) : [];
+};
+const saveRecents = (uid, list) => { store.set(recentKey(uid), list.slice(0, 8)); return list.slice(0, 8); };
+const pushRecent = (uid, entry) => saveRecents(uid, [entry, ...loadRecents(uid).filter((r) => r.pageId !== entry.pageId)]);
+const removeRecent = (uid, pageId) => saveRecents(uid, loadRecents(uid).filter((r) => r.pageId !== pageId));
+const patchRecent = (uid, pageId, patch) =>
+  saveRecents(uid, loadRecents(uid).map((r) => (r.pageId === pageId ? { ...r, ...patch } : r)));
 
-        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 block">Ziel-Notizbuch</label>
-        <select value={targetBookId} onChange={(e) => setTargetBookId(e.target.value)}
-          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          {notebooks.map(nb => <option key={nb.id} value={nb.id}>{nb.name}</option>)}
-        </select>
-
-        {type === "page" && (
-          <>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 block">Ziel-Abschnitt</label>
-            <select value={targetSectionId} onChange={(e) => setTargetSectionId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-              {targetSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </>
-        )}
-
-        <div className="flex gap-2 mt-2">
-          <button onClick={() => handleAction("copy")} disabled={busy}
-            className="flex-1 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-100 disabled:opacity-50">
-            Kopieren
-          </button>
-          <button onClick={() => handleAction("move")} disabled={busy}
-            className="flex-1 py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 disabled:opacity-50">
-            {busy ? "…" : "Verschieben"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Context Menu (⋯ button dropdown) ─────────────────────────────────────────
-function ContextMenu({ items, onClose }) {
-  const ref = useRef(null);
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
   useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("touchstart", handler);
-    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
-  }, [onClose]);
+    const mq = window.matchMedia("(max-width: 639px)");
+    const handler = (e) => setMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return mobile;
+}
 
-  return (
-    <div ref={ref} className="absolute right-0 top-7 z-50 bg-white rounded-xl shadow-xl border border-slate-200 py-1 min-w-[140px]">
-      {items.map((item, i) => (
-        item === "---"
-          ? <div key={i} className="border-t border-slate-100 my-1" />
-          : <button key={i} onClick={(e) => { e.stopPropagation(); item.onClick(); onClose(); }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-all ${item.danger ? "text-red-500" : "text-slate-700"}`}>
-              {item.label}
-            </button>
-      ))}
-    </div>
+// Reiner Text einer Seite (Suche, Wortzahl) – DOMParser führt nichts aus
+const textCache = new Map();
+function pageText(page) {
+  const html = page.content || "";
+  const hit = textCache.get(page.id);
+  if (hit && hit.html === html) return hit.text;
+  let text = "";
+  try {
+    text = new DOMParser().parseFromString(html, "text/html").body.textContent || "";
+  } catch {
+    text = html.replace(/<[^>]+>/g, " ");
+  }
+  text = text.replace(/\s+/g, " ").trim();
+  textCache.set(page.id, { html, text });
+  return text;
+}
+
+const countWords = (html) => {
+  const text = (html || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").trim();
+  return text ? text.split(/\s+/).length : 0;
+};
+
+function Highlight({ text, needle }) {
+  if (!needle) return text;
+  const lower = text.toLowerCase();
+  const parts = [];
+  let i = 0;
+  while (i < text.length) {
+    const at = lower.indexOf(needle, i);
+    if (at < 0) { parts.push(text.slice(i)); break; }
+    if (at > i) parts.push(text.slice(i, at));
+    parts.push(<mark key={at}>{text.slice(at, at + needle.length)}</mark>);
+    i = at + needle.length;
+  }
+  return parts;
+}
+
+// ── Kontextmenü (Portal, damit es nie abgeschnitten wird) ─────────────────────
+// at: { x, y, alignRight? } · items: { label, icon, onClick, danger, confirm } | "---"
+function PopMenu({ at, items, onClose, anchor }) {
+  const ref = useRef(null);
+  const [confirm, setConfirm] = useState(-1);
+  const [pos, setPos] = useState({ left: at.x, top: at.y, visibility: "hidden" });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    let left = at.alignRight ? at.x - r.width : at.x;
+    left = Math.max(8, Math.min(left, window.innerWidth - r.width - 8));
+    let top = at.y;
+    if (top + r.height > window.innerHeight - 8) top = Math.max(8, (at.top ?? at.y) - r.height - 4);
+    setPos({ left, top });
+  }, [at]);
+
+  useEffect(() => {
+    const down = (e) => {
+      if (ref.current?.contains(e.target) || anchor?.contains(e.target)) return;
+      onClose();
+    };
+    const key = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("keydown", key, true);
+    window.addEventListener("resize", onClose);
+    window.addEventListener("blur", onClose);
+    return () => {
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("keydown", key, true);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose, anchor]);
+
+  return createPortal(
+    <div ref={ref} role="menu" className="menu glass-strong !fixed" style={{ ...pos, minWidth: 220 }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      // Portal: React-Ereignisse würden sonst bis zur Zeile im Baum durchreichen
+      onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}>
+      {items.filter(Boolean).map((it, i) => (it === "---"
+        ? <div key={i} className="menu-sep" />
+        : (
+          <button key={i} type="button" role="menuitem"
+            className={`menu-item ${it.danger ? "menu-item-danger" : ""}`}
+            onClick={() => {
+              if (it.confirm && confirm !== i) { setConfirm(i); return; }
+              onClose();
+              it.onClick();
+            }}>
+            <span className="w-4 flex justify-center opacity-80">{it.icon}</span>
+            <span>{it.confirm && confirm === i ? "Wirklich löschen? Nochmal klicken" : it.label}</span>
+          </button>
+        )))}
+    </div>,
+    document.body,
   );
 }
 
-// ── Page Editor ───────────────────────────────────────────────────────────────
+// Menü am ⋯-Knopf bzw. per Rechtsklick öffnen
+function useMenu() {
+  const [menu, setMenu] = useState(null); // { at, anchor }
+  const close = useCallback(() => setMenu(null), []);
+  const fromButton = (e) => {
+    e.stopPropagation();
+    if (menu) { setMenu(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    setMenu({ at: { x: r.right, y: r.bottom + 4, top: r.top, alignRight: true }, anchor: e.currentTarget });
+  };
+  const fromContext = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ at: { x: e.clientX, y: e.clientY, top: e.clientY } });
+  };
+  return { menu, close, fromButton, fromContext };
+}
+
+// Eingabezeile im Baum (neu anlegen / umbenennen)
+function TreeInput({ initial = "", placeholder, onCommit, onCancel }) {
+  const [val, setVal] = useState(initial);
+  const done = useRef(false);
+  const commit = () => {
+    if (done.current) return;
+    done.current = true;
+    const v = val.trim();
+    if (v && v !== initial) onCommit(v);
+    else onCancel();
+  };
+  return (
+    <input autoFocus value={val} placeholder={placeholder} className="nt-input"
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setVal(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") { e.preventDefault(); commit(); }
+        if (e.key === "Escape") { e.preventDefault(); done.current = true; onCancel(); }
+      }} />
+  );
+}
+
+const Chevron = ({ open }) => (
+  <ChevronRight size={14} className={`flex-shrink-0 text-slate-400 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+);
+
+const onRowKey = (fn) => (e) => {
+  if (e.target !== e.currentTarget) return;
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); }
+};
+
+// ── Seiten-Editor ─────────────────────────────────────────────────────────────
 // Bearbeitungssperre: eine Seite ist immer nur in einem Editor bearbeitbar
 // (zweites Fenster, anderes Gerät) – dort läuft sie live im Lesemodus mit.
-export function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleFullscreen, breadcrumb, layout = "panel", onPoppedOut }) {
+// Im Notizbereich wird erst beim Tippen gesperrt (Ansehen sperrt nicht), im
+// eigenen Fenster sofort.
+//
+// layout: "panel" (Notizbereich) | "sheet" (Handy, Vollbild) | "window"
+export function PageEditor({
+  uid, bookId, sectionId, page, breadcrumb = "", layout = "panel",
+  fullscreen = false, onToggleFullscreen, onPoppedOut, onClose, onDeleted, onRequestMove, onSaved,
+  autoFocusTitle = false, treeHidden = false, onToggleTree,
+}) {
   const { user, userProfile } = useFirebaseAuth();
   const isWindow = layout === "window";
+  const isSheet = layout === "sheet";
+  const [title, setTitle] = useState(page.title || "");
   const [content, setContent] = useState(page.content || "");
-  const [saved, setSaved] = useState(true);
-  // "Zuletzt geändert" für die Fußzeile: startet mit dem gespeicherten Stand,
-  // wird bei jedem Auto-Save auf die lokale Speicherzeit gesetzt
+  const [dirty, setDirty] = useState(false);
   const [lastSaved, setLastSaved] = useState(page.updatedAt);
   const [exporting, setExporting] = useState(false);
+  const pendingRef = useRef({});
   const timerRef = useRef(null);
-  const contentRef = useRef(content);
-  const richEditorRef = useRef(null);
+  const titleRef = useRef(null);
+  const editorRef = useRef(null);
+  const { menu, close: closeMenu, fromButton } = useMenu();
 
   const lockPath = useMemo(() => pageLockPath(uid, bookId, sectionId, page.id), [uid, bookId, sectionId, page.id]);
-  const { lockState, live, takeOver } = useEditLock({
-    path: lockPath, uid, name: userProfile?.displayName || user?.email || "", initial: page,
+  const { lockState, live, takeOver, activate, gone } = useEditLock({
+    path: lockPath, uid, name: userProfile?.displayName || user?.email || "", initial: page, lazy: !isWindow,
   });
   const locked = lockState === "other";
+  const readOnly = locked || gone;
+  const lockRef = useRef(lockState);
+  lockRef.current = lockState;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
 
-  useEffect(() => {
-    setContent(page.content || "");
-    contentRef.current = page.content || "";
-    setSaved(true);
-    setLastSaved(page.updatedAt);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page.id]);
-
-  // Gesperrt: Inhalt aus dem anderen Fenster/Gerät live übernehmen
-  useEffect(() => {
-    if (!locked || !live) return;
-    setContent(live.content || "");
-    contentRef.current = live.content || "";
-    setLastSaved(live.updatedAt);
-  }, [locked, live]);
-
-  const flush = useCallback(() => {
-    if (!timerRef.current) return;
+  // Offene Änderungen schreiben (Auto-Save, Seitenwechsel, Fenster schließen)
+  const write = useCallback(() => {
     clearTimeout(timerRef.current);
     timerRef.current = null;
-    updatePage(uid, bookId, sectionId, page.id, { content: contentRef.current });
+    const patch = pendingRef.current;
+    pendingRef.current = {};
+    if (!Object.keys(patch).length) return;
+    setDirty(false);
+    // Hat inzwischen ein anderes Fenster/Gerät die Seite übernommen, wird
+    // dessen Stand nicht überschrieben
+    if (lockRef.current === "other") return;
+    updatePage(uid, bookId, sectionId, page.id, patch);
+    setLastSaved(new Date());
+    onSavedRef.current?.(patch);
   }, [uid, bookId, sectionId, page.id]);
 
-  const handleChange = useCallback((val) => {
-    if (locked) return;
-    setContent(val);
-    contentRef.current = val;
-    setSaved(false);
-    clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(async () => {
-      timerRef.current = null;
-      await updatePage(uid, bookId, sectionId, page.id, { content: val });
-      setSaved(true);
-      setLastSaved(new Date());
-    }, 800);
-  }, [uid, bookId, sectionId, page.id, locked]);
+  const writeRef = useRef(write);
+  writeRef.current = write;
+  useEffect(() => {
+    const onHide = () => writeRef.current();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      writeRef.current(); // beim Umschalten auf eine andere Seite sofort speichern
+    };
+  }, []);
 
-  // In eigenem Fenster weiterschreiben: offene Änderung sofort speichern,
-  // Seite hier schließen (gibt die Sperre frei)
+  const schedule = (patch) => {
+    if (readOnly) return;
+    Object.assign(pendingRef.current, patch);
+    setDirty(true);
+    activate();
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => writeRef.current(), 700);
+  };
+
+  // Stand von anderswo übernehmen (anderes Fenster/Gerät, Umbenennen im Baum),
+  // solange hier nichts Ungespeichertes daran hängt
+  useEffect(() => {
+    if (!live) return;
+    const p = pendingRef.current;
+    if (!("content" in p)) setContent(live.content || "");
+    if (!("title" in p) && document.activeElement !== titleRef.current) setTitle(live.title || "");
+    if (!Object.keys(p).length && live.updatedAt) setLastSaved(live.updatedAt);
+  }, [live]);
+
+  useEffect(() => {
+    if (!autoFocusTitle) return;
+    const t = setTimeout(() => titleRef.current?.focus(), 30);
+    return () => clearTimeout(t);
+  }, [autoFocusTitle]);
+
   const canPopOut = !isWindow && canOpenWindows();
   const popOut = () => {
-    flush();
-    openInWindow(`/note/${bookId}/${sectionId}/${page.id}`, "note", page.title);
+    write();
+    openInWindow(`/note/${bookId}/${sectionId}/${page.id}`, "note", title || UNTITLED);
     onPoppedOut?.();
   };
 
-  // Aktuelle Seite als Word-Datei (.docx) herunterladen.
-  // docx-Bibliothek wird erst beim Klick nachgeladen (kleines Haupt-Bundle).
+  // Word-Export (.docx) – Bibliothek erst beim Klick nachladen
   const handleWordExport = async () => {
     if (exporting) return;
     setExporting(true);
     try {
       const { exportNoteToDocx } = await import("@/lib/docxExport");
       await exportNoteToDocx({
-        title: page.title,
-        content, // lokaler Stand inkl. noch nicht gespeicherter Änderungen
+        title: title || UNTITLED,
+        content,
         createdAt: page.createdAt,
         updatedAt: lastSaved,
         breadcrumb,
@@ -286,501 +326,866 @@ export function PageEditor({ uid, bookId, sectionId, page, fullscreen, onToggleF
     }
   };
 
+  const remove = () => {
+    pendingRef.current = {};
+    clearTimeout(timerRef.current);
+    deletePage(uid, bookId, sectionId, page.id);
+    onDeleted?.();
+  };
+
+  const words = useMemo(() => countWords(content), [content]);
+
+  const menuItems = [
+    onRequestMove && { label: "Verschieben / kopieren …", icon: <FolderInput size={15} />, onClick: () => { write(); onRequestMove(); } },
+    { label: "Als Word-Datei exportieren", icon: <FileDown size={15} />, onClick: handleWordExport },
+    onDeleted && "---",
+    onDeleted && { label: "Seite löschen", icon: <Trash2 size={15} />, danger: true, confirm: true, onClick: remove },
+  ].filter(Boolean);
+
+  const status = gone ? ["Gelöscht", "text-slate-400", "bg-slate-300"]
+    : locked ? ["Nur lesen", "text-amber-600", "bg-amber-400"]
+    : dirty ? ["Speichert …", "text-amber-600", "bg-amber-400 animate-pulse"]
+    : ["Gespeichert", "text-emerald-600", "bg-emerald-500"];
+
   return (
-    <div className="flex flex-col h-full">
-      {!isWindow && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/60 flex-shrink-0 gap-2">
-          <span className="text-xs font-semibold text-slate-600 truncate flex-1">{page.title}</span>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <SyncIndicator compact />
-            <span className={`text-[10px] font-medium transition-colors mx-1 ${locked ? "text-amber-500" : saved ? "text-emerald-500" : "text-amber-400"}`}>
-              {locked ? "🔒 nur lesen" : saved ? "✓ gespeichert" : "● speichert…"}
-            </span>
-            <button onClick={handleWordExport} disabled={exporting} title="Als Word-Datei (.docx) exportieren"
-              className="btn-icon btn-icon-sm text-indigo-500 disabled:opacity-50">
-              {exporting
-                ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                : <WordIcon />}
-            </button>
-            {canPopOut && (
-              <button onClick={popOut} title="In eigenem Fenster öffnen" className="btn-icon btn-icon-sm">
-                <AppWindow size={15} />
-              </button>
-            )}
-            {onToggleFullscreen && (
-              <button onClick={onToggleFullscreen} title={fullscreen ? "Vollbild beenden" : "Vollbild"}
-                className="btn-icon btn-icon-sm">
-                {fullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {isWindow && (
-        <div className="flex items-center gap-2 px-5 pt-2 pb-1 flex-shrink-0 max-w-5xl w-full mx-auto">
-          {breadcrumb && <span className="text-[12px] font-medium text-slate-400 truncate">{breadcrumb}</span>}
-          <span className="flex-1" />
-          <SyncIndicator />
-          <span className={`text-[11px] font-medium ${locked ? "text-amber-500" : saved ? "text-emerald-500" : "text-amber-400"}`}>
-            {locked ? "🔒 nur lesen" : saved ? "✓ gespeichert" : "● speichert…"}
-          </span>
+    <div className="flex flex-col h-full min-h-0"
+      onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); write(); }
+      }}>
+      <div className={`flex items-center gap-1 flex-shrink-0 border-b border-slate-200/60 ${isSheet ? "h-12 px-2" : "h-11 px-3"}`}>
+        {isSheet && (
+          <button onClick={() => { write(); onClose?.(); }} className="btn-icon" title="Zurück zur Übersicht" aria-label="Zurück">
+            <ArrowLeft size={19} />
+          </button>
+        )}
+        {onToggleTree && (
+          <button onClick={onToggleTree} className="btn-icon btn-icon-sm"
+            title={treeHidden ? "Notizbücher einblenden" : "Notizbücher ausblenden (mehr Platz)"}>
+            {treeHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
+        )}
+        <span className="flex-1 min-w-0 truncate text-[12px] font-medium text-slate-400 px-1" title={breadcrumb}>
+          {breadcrumb}
+        </span>
+        <span className={`flex items-center gap-1.5 text-[11px] font-medium px-1.5 flex-shrink-0 ${status[1]}`} data-save-state={gone ? "gone" : locked ? "locked" : dirty ? "dirty" : "saved"}>
+          <span className={`w-1.5 h-1.5 rounded-full ${status[2]}`} />
+          <span className={isSheet ? "sr-only" : ""}>{status[0]}</span>
+        </span>
+        <SyncIndicator compact />
+        {!isSheet && (
           <button onClick={handleWordExport} disabled={exporting} title="Als Word-Datei (.docx) exportieren"
-            className="btn-icon text-indigo-500 disabled:opacity-50">
+            className="btn-icon btn-icon-sm text-indigo-500">
             {exporting
               ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-              : <WordIcon />}
+              : <FileDown size={16} />}
           </button>
+        )}
+        {canPopOut && (
+          <button onClick={popOut} title="In eigenem Fenster öffnen" className="btn-icon btn-icon-sm">
+            <AppWindow size={16} />
+          </button>
+        )}
+        {onToggleFullscreen && (
+          <button onClick={onToggleFullscreen} title={fullscreen ? "Vollbild beenden" : "Vollbild"} className="btn-icon btn-icon-sm">
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
+        {!isWindow && (
+          <button onClick={fromButton} title="Weitere Aktionen" aria-label="Weitere Aktionen" className="btn-icon btn-icon-sm">
+            <MoreHorizontal size={17} />
+          </button>
+        )}
+        {menu && <PopMenu at={menu.at} anchor={menu.anchor} items={menuItems} onClose={closeMenu} />}
+      </div>
+
+      {gone && (
+        <div className="flex items-center gap-2.5 mx-3 mt-2 rounded-xl bg-slate-100 border border-slate-200 px-3 py-2">
+          <Trash2 size={14} className="text-slate-500 flex-shrink-0" />
+          <p className="flex-1 text-xs text-slate-600">Diese Seite wurde gelöscht oder verschoben.</p>
+          {onClose && (
+            <button onClick={onClose} className="px-2.5 py-1 rounded-lg bg-slate-600 text-white text-xs font-semibold">Schließen</button>
+          )}
         </div>
       )}
-      {locked && (
-        <div className={`flex items-center gap-2.5 mx-3 mt-2 rounded-xl bg-amber-50/90 border border-amber-200 px-3 py-2 ${isWindow ? "max-w-5xl w-[calc(100%-2.5rem)] mx-auto" : ""}`}>
+      {locked && !gone && (
+        <div className="flex items-center gap-2.5 mx-3 mt-2 rounded-xl bg-amber-50/90 border border-amber-200 px-3 py-2">
           <Lock size={14} className="text-amber-600 flex-shrink-0" />
           <p className="flex-1 text-xs text-amber-800 leading-snug">
-            Diese Seite ist gerade in einem anderen Fenster oder auf einem anderen Gerät geöffnet und wird hier nur angezeigt.
+            Diese Seite wird gerade in einem anderen Fenster oder auf einem anderen Gerät bearbeitet – hier siehst du sie live mit.
           </p>
           <button onClick={takeOver} className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-semibold flex-shrink-0 hover:bg-amber-600">
             Hier bearbeiten
           </button>
         </div>
       )}
-      <div className={`flex-1 overflow-y-auto ${isWindow ? "px-5 py-3" : "p-3"}`}>
-        <div className={isWindow ? "max-w-5xl mx-auto" : ""}>
-          {isWindow && <h1 className="text-2xl font-semibold text-slate-800 tracking-tight px-1 mb-3">{page.title}</h1>}
-          <RichEditor ref={richEditorRef} value={content} onChange={handleChange}
-            placeholder="Hier tippen… (Strg+T für Zeitmarke)"
-            minHeight={isWindow ? 520 : fullscreen ? 600 : 300}
-            readOnly={locked} />
-        </div>
-      </div>
-      <div className={`flex-shrink-0 px-3 pt-1 pb-2 border-t border-slate-200/60 ${isWindow ? "px-5" : ""}`}>
-        <TimestampInfo createdAt={page.createdAt} updatedAt={lastSaved} className={isWindow ? "max-w-5xl mx-auto" : ""} />
-      </div>
-    </div>
-  );
-}
 
-// ── Section tree (recursive) ──────────────────────────────────────────────────
-function SectionNode({ uid, bookId, section, allSections, depth = 0, selectedPage, onSelectPage, notebooks, openIds, onToggleOpen, onMoveCopy }) {
-  const open = openIds.has(section.id);
-  const [pages, setPages] = useState([]);
-  const [addingPage, setAddingPage] = useState(false);
-  const [newPageTitle, setNewPageTitle] = useState("");
-  const [addingSubsection, setAddingSubsection] = useState(false);
-  const [newSubName, setNewSubName] = useState("");
-  const [confirmDel, setConfirmDel] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    return subscribePages(uid, bookId, section.id, setPages);
-  }, [uid, bookId, section.id, open]);
-
-  const children = allSections.filter((s) => s.parentSectionId === section.id);
-
-  const handleAddPage = async () => {
-    const t = newPageTitle.trim();
-    if (!t) return;
-    await addPage(uid, bookId, section.id, t);
-    setNewPageTitle(""); setAddingPage(false);
-  };
-
-  const handleAddSubsection = async () => {
-    const n = newSubName.trim();
-    if (!n) return;
-    await addSection(uid, bookId, n, section.id);
-    setNewSubName(""); setAddingSubsection(false);
-  };
-
-  const handleDeleteSection = async () => {
-    if (!confirmDel) { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); return; }
-    await deleteSection(uid, bookId, section.id);
-  };
-
-  const indent = depth * 10;
-
-  const menuItems = [
-    { label: "Seite hinzufügen", onClick: () => { onToggleOpen(section.id, true); setAddingPage(true); } },
-    { label: "Unterabschnitt", onClick: () => { onToggleOpen(section.id, true); setAddingSubsection(true); } },
-    "---",
-    { label: "In anderes Buch verschieben/kopieren", onClick: () => onMoveCopy({ type: "section", label: section.name, sectionId: section.id, bookId }) },
-    "---",
-    { label: confirmDel ? "Wirklich löschen?" : "Löschen", danger: true, onClick: handleDeleteSection },
-  ];
-
-  return (
-    <div style={{ marginLeft: indent }}>
-      <div className="flex items-center gap-1 px-2 py-1.5 rounded-xl group hover:bg-slate-100/80 transition-all relative">
-        {/* Clickable area: chevron + icon + name all toggle open */}
-        <button onClick={() => onToggleOpen(section.id)} className="flex items-center gap-1 flex-1 min-w-0 text-left">
-          <span className="text-slate-400 flex-shrink-0 w-4 h-4 flex items-center justify-center">
-            <ChevronIcon open={open} />
-          </span>
-          <span className="text-slate-400 flex-shrink-0"><FolderIcon /></span>
-          <InlineEdit value={section.name}
-            onSave={(name) => updateSection(uid, bookId, section.id, { name })}
-            className="text-xs font-medium text-slate-700 flex-1 min-w-0" />
-        </button>
-        {/* Context menu button */}
-        <div className="relative flex-shrink-0">
-          <button onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-            className="w-5 h-5 rounded-md text-slate-400 flex items-center justify-center hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-all">
-            <DotsIcon />
-          </button>
-          {showMenu && <ContextMenu items={menuItems} onClose={() => { setShowMenu(false); setConfirmDel(false); }} />}
-        </div>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <RichEditor ref={editorRef} variant="page" value={content} readOnly={readOnly}
+          onChange={(html) => { setContent(html); schedule({ content: html }); }}
+          placeholder="Schreib los …  # Überschrift · - Liste · [] Checkliste · Strg+T Zeitmarke"
+          minHeight={isWindow || fullscreen ? 520 : 320}
+          header={(
+            <input ref={titleRef} value={title} readOnly={readOnly} placeholder={UNTITLED}
+              aria-label="Seitentitel" className="note-title"
+              onChange={(e) => { setTitle(e.target.value); schedule({ title: e.target.value }); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "ArrowDown") { e.preventDefault(); editorRef.current?.focus(); }
+              }} />
+          )} />
       </div>
 
-      {addingSubsection && (
-        <div style={{ marginLeft: 16 + indent }} className="flex gap-1 items-center py-1 pr-2">
-          <input value={newSubName} onChange={(e) => setNewSubName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleAddSubsection(); if (e.key === "Escape") { setAddingSubsection(false); setNewSubName(""); } }}
-            placeholder="Unterabschnitt…" autoFocus
-            className="flex-1 px-2 py-1 rounded-lg bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
-          <button onClick={handleAddSubsection} className="px-2 py-1 rounded-lg bg-slate-500 text-white text-xs">↵</button>
-        </div>
-      )}
-
-      {open && (
-        <div>
-          {pages.map((p) => (
-            <PageRow key={p.id} uid={uid} bookId={bookId} sectionId={section.id} sectionName={section.name} page={p}
-              selectedPage={selectedPage} onSelectPage={onSelectPage}
-              notebooks={notebooks} indent={16} onMoveCopy={onMoveCopy} />
-          ))}
-
-          {addingPage && (
-            <div style={{ marginLeft: 16 }} className="flex gap-1 items-center py-1 pr-2">
-              <input value={newPageTitle} onChange={(e) => setNewPageTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddPage(); if (e.key === "Escape") { setAddingPage(false); setNewPageTitle(""); } }}
-                placeholder="Seitenname…" autoFocus
-                className="flex-1 px-2 py-1 rounded-lg bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
-              <button onClick={handleAddPage} className="px-2 py-1 rounded-lg bg-indigo-500 text-white text-xs">↵</button>
-            </div>
-          )}
-
-          {children.map((child) => (
-            <SectionNode key={child.id} uid={uid} bookId={bookId} section={child}
-              allSections={allSections} depth={depth + 1}
-              selectedPage={selectedPage} onSelectPage={onSelectPage}
-              notebooks={notebooks} openIds={openIds} onToggleOpen={onToggleOpen} onMoveCopy={onMoveCopy} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Page row ─────────────────────────────────────────────────────────────────
-function PageRow({ uid, bookId, sectionId, sectionName, page, selectedPage, onSelectPage, notebooks, indent, onMoveCopy }) {
-  const [showMenu, setShowMenu] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
-
-  const handleDelete = async (e) => {
-    e.stopPropagation();
-    if (!confirmDel) { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); return; }
-    await deletePage(uid, bookId, sectionId, page.id);
-    if (selectedPage?.page.id === page.id) onSelectPage(null);
-  };
-
-  const menuItems = [
-    { label: "In anderen Abschnitt verschieben/kopieren", onClick: () => onMoveCopy({ type: "page", label: page.title, pageId: page.id, bookId, sectionId }) },
-    "---",
-    { label: confirmDel ? "Wirklich löschen?" : "Löschen", danger: true, onClick: handleDelete },
-  ];
-
-  return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl group transition-all cursor-pointer relative ${
-      selectedPage?.page.id === page.id ? "bg-indigo-100 text-indigo-700" : "hover:bg-slate-100/80 text-slate-600"
-    }`} style={{ marginLeft: indent }} onClick={() => onSelectPage({ page, bookId, sectionId, sectionName })}>
-      <span className="flex-shrink-0 text-slate-400"><FileIcon /></span>
-      <span className="text-xs flex-1 truncate">{page.title}</span>
-      <div className="relative flex-shrink-0">
-        <button onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-          className="w-5 h-5 rounded flex items-center justify-center text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-200 transition-all">
-          <DotsIcon />
-        </button>
-        {showMenu && <ContextMenu items={menuItems} onClose={() => { setShowMenu(false); setConfirmDel(false); }} />}
+      <div className={`flex items-center gap-3 flex-shrink-0 border-t border-slate-200/60 h-8 ${isSheet ? "px-3" : "px-4"}`}>
+        <TimestampInfo createdAt={page.createdAt} updatedAt={lastSaved} className="flex-1 min-w-0" />
+        <span className="text-[10px] text-slate-400 flex-shrink-0">{words} {words === 1 ? "Wort" : "Wörter"}</span>
       </div>
     </div>
   );
 }
 
-// ── Notebook node ─────────────────────────────────────────────────────────────
-function NotebookNode({ uid, notebook, selectedPage, onSelectPage, notebooks, openIds, onToggleOpen, onMoveCopy }) {
-  const open = openIds.has(notebook.id);
+// ── Verschieben / Kopieren ────────────────────────────────────────────────────
+function MoveCopyModal({ uid, type, label, notebooks, bookId, sectionId, pageId, onDone, onClose }) {
+  const [targetBookId, setTargetBookId] = useState(bookId);
   const [sections, setSections] = useState([]);
-  const [addingSection, setAddingSection] = useState(false);
-  const [newSectionName, setNewSectionName] = useState("");
-  const [confirmDel, setConfirmDel] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
+  const [targetSectionId, setTargetSectionId] = useState(sectionId || "");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    return subscribeSections(uid, notebook.id, setSections);
-  }, [uid, notebook.id, open]);
+    if (type !== "page") return;
+    return subscribeSections(uid, targetBookId, setSections);
+  }, [uid, targetBookId, type]);
 
-  const topLevelSections = sections.filter((s) => !s.parentSectionId);
+  // Abschnitte als eingerückte Liste (inkl. Unterabschnitte)
+  const options = useMemo(() => {
+    const out = [];
+    const walk = (parent, depth) => {
+      sections.filter((s) => (s.parentSectionId || null) === parent).forEach((s) => {
+        out.push({ id: s.id, label: `${"   ".repeat(depth)}${s.name}` });
+        if (depth < 8) walk(s.id, depth + 1);
+      });
+    };
+    walk(null, 0);
+    return out;
+  }, [sections]);
 
-  const handleAddSection = async () => {
-    const n = newSectionName.trim();
-    if (!n) return;
-    await addSection(uid, notebook.id, n, null);
-    setNewSectionName(""); setAddingSection(false);
+  useEffect(() => {
+    if (type === "page" && options.length && !options.find((o) => o.id === targetSectionId)) {
+      setTargetSectionId(options[0].id);
+    }
+  }, [options, targetSectionId, type]);
+
+  const same = type === "page" ? targetSectionId === sectionId && targetBookId === bookId : targetBookId === bookId;
+  const valid = type === "page" ? !!targetSectionId : !!targetBookId;
+
+  const run = async (action) => {
+    setBusy(true);
+    try {
+      if (type === "page") {
+        if (action === "move") await movePage(uid, bookId, sectionId, pageId, targetBookId, targetSectionId);
+        else await copyPage(uid, bookId, sectionId, pageId, targetBookId, targetSectionId);
+      } else {
+        if (action === "move") await moveSection(uid, bookId, sectionId, targetBookId);
+        else await copySection(uid, bookId, sectionId, targetBookId, null);
+      }
+      onDone(action);
+    } catch (err) {
+      console.error("Verschieben/Kopieren fehlgeschlagen:", err);
+      alert("Das hat nicht geklappt: " + (err?.message || err));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleDelete = async () => {
-    if (!confirmDel) { setConfirmDel(true); setTimeout(() => setConfirmDel(false), 3000); return; }
-    await deleteNotebook(uid, notebook.id);
-  };
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.4)", backdropFilter: "blur(6px)" }}
+      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl p-5 w-full max-w-sm" role="dialog" aria-label="Verschieben oder kopieren">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[15px] font-semibold text-slate-800">{type === "page" ? "Seite" : "Abschnitt"} verschieben oder kopieren</h3>
+            <p className="text-xs text-slate-400 truncate mt-0.5">„{label || UNTITLED}"</p>
+          </div>
+          <button onClick={onClose} className="btn-icon btn-icon-sm" aria-label="Schließen"><X size={16} /></button>
+        </div>
 
-  const menuItems = [
-    { label: "Abschnitt hinzufügen", onClick: () => { onToggleOpen(notebook.id, true); setAddingSection(true); } },
+        <label className="section-label block mb-1">Notizbuch</label>
+        <select value={targetBookId} onChange={(e) => setTargetBookId(e.target.value)}
+          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm mb-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          {notebooks.map((nb) => <option key={nb.id} value={nb.id}>{nb.name}</option>)}
+        </select>
+
+        {type === "page" && (
+          <>
+            <label className="section-label block mb-1">Abschnitt</label>
+            <select value={targetSectionId} onChange={(e) => setTargetSectionId(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm mb-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              {options.length === 0 && <option value="">– keine Abschnitte –</option>}
+              {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </>
+        )}
+
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => run("copy")} disabled={busy || !valid}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-600 text-sm font-semibold hover:bg-indigo-100 disabled:opacity-50">
+            Kopieren
+          </button>
+          <button onClick={() => run("move")} disabled={busy || !valid || same}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-500 text-white text-sm font-semibold hover:bg-indigo-600 disabled:opacity-50">
+            {busy ? "…" : "Verschieben"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Baum: Notizbuch › Abschnitt (verschachtelt) › Seite ──────────────────────
+function PageRow({ ctx, bookId, section, page, depth }) {
+  const { menu, close, fromButton, fromContext } = useMenu();
+  const active = ctx.selected?.page.id === page.id;
+  const renaming = ctx.renaming === page.id;
+  const open = () => ctx.openPage({ bookId, sectionId: section.id, sectionName: section.name, page });
+
+  const items = [
+    canOpenWindows() && { label: "In eigenem Fenster öffnen", icon: <AppWindow size={15} />, onClick: () => openInWindow(`/note/${bookId}/${section.id}/${page.id}`, "note", page.title || UNTITLED) },
+    { label: "Umbenennen", icon: <Pencil size={15} />, onClick: () => ctx.setRenaming(page.id) },
+    { label: "Verschieben / kopieren …", icon: <FolderInput size={15} />, onClick: () => ctx.setMoveCopy({ type: "page", label: page.title, pageId: page.id, bookId, sectionId: section.id }) },
     "---",
-    { label: confirmDel ? "Wirklich löschen?" : "Löschen", danger: true, onClick: handleDelete },
+    { label: "Seite löschen", icon: <Trash2 size={15} />, danger: true, confirm: true, onClick: () => ctx.removePage(bookId, section.id, page.id) },
   ];
 
   return (
-    <div className="mb-1">
-      <div className={`flex items-center gap-2 px-3 py-2 rounded-xl group transition-all relative ${open ? "bg-indigo-50 border border-indigo-100" : "hover:bg-slate-100/80"}`}>
-        {/* Clickable area: chevron + icon + name */}
-        <button onClick={() => onToggleOpen(notebook.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-          <span className="text-indigo-400 flex-shrink-0"><ChevronIcon open={open} /></span>
-          <span className="text-indigo-400 flex-shrink-0"><BookIcon /></span>
-          <InlineEdit value={notebook.name}
-            onSave={(name) => updateNotebook(uid, notebook.id, { name })}
-            className="text-sm font-semibold text-slate-800 flex-1 min-w-0" />
-        </button>
-        {/* Context menu */}
-        <div className="relative flex-shrink-0">
-          <button onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-            className="w-6 h-6 rounded-lg text-slate-400 flex items-center justify-center hover:bg-slate-200 opacity-0 group-hover:opacity-100 transition-all">
-            <DotsIcon />
-          </button>
-          {showMenu && <ContextMenu items={menuItems} onClose={() => { setShowMenu(false); setConfirmDel(false); }} />}
-        </div>
+    <div role="treeitem" aria-selected={active} tabIndex={0} data-page-id={page.id}
+      className={`nt-row ${active ? "nt-row-active" : ""}`} style={{ paddingLeft: 8 + depth * 14 }}
+      onClick={open} onKeyDown={onRowKey(open)} onContextMenu={fromContext}
+      onDoubleClick={(e) => { e.stopPropagation(); ctx.setRenaming(page.id); }}>
+      <FileText size={14} className={`flex-shrink-0 ${active ? "text-indigo-500" : "text-slate-400"}`} />
+      {renaming ? (
+        <TreeInput initial={page.title || ""} placeholder={UNTITLED}
+          onCommit={(t) => { ctx.setRenaming(null); updatePage(ctx.uid, bookId, section.id, page.id, { title: t }); }}
+          onCancel={() => ctx.setRenaming(null)} />
+      ) : (
+        <span className={`flex-1 min-w-0 truncate ${page.title ? "" : "italic text-slate-400"}`}>{page.title || UNTITLED}</span>
+      )}
+      <span className={`nt-actions ${menu ? "nt-actions-open" : ""}`}>
+        <button type="button" className="nt-act" title="Weitere Aktionen" aria-label="Weitere Aktionen" onClick={fromButton}><MoreHorizontal size={15} /></button>
+      </span>
+      {menu && <PopMenu at={menu.at} anchor={menu.anchor} items={items} onClose={close} />}
+    </div>
+  );
+}
+
+function SectionNode({ ctx, bookId, section, allSections, depth }) {
+  const open = ctx.openIds.has(section.id);
+  const [pages, setPages] = useState(null);
+  const { menu, close, fromButton, fromContext } = useMenu();
+  const renaming = ctx.renaming === section.id;
+  const children = allSections.filter((s) => s.parentSectionId === section.id);
+  const addingSub = ctx.adding?.type === "section" && ctx.adding.parentId === section.id;
+  const containsSelected = ctx.selected?.sectionId === section.id;
+
+  useEffect(() => {
+    if (!open) return;
+    return subscribePages(ctx.uid, bookId, section.id, setPages);
+  }, [ctx.uid, bookId, section.id, open]);
+
+  const target = { bookId, sectionId: section.id, sectionName: section.name };
+  const toggle = () => { ctx.toggleOpen(section.id); ctx.setCurrent(target); };
+  const descendants = () => {
+    const ids = [section.id];
+    for (let i = 0; i < ids.length; i++) allSections.forEach((s) => { if (s.parentSectionId === ids[i]) ids.push(s.id); });
+    return ids;
+  };
+
+  const items = [
+    { label: "Neue Seite", icon: <FilePlus2 size={15} />, onClick: () => ctx.createPage(target) },
+    { label: "Unterabschnitt anlegen", icon: <FolderPlus size={15} />, onClick: () => { ctx.openMany([section.id]); ctx.setAdding({ type: "section", bookId, parentId: section.id }); } },
+    { label: "Umbenennen", icon: <Pencil size={15} />, onClick: () => ctx.setRenaming(section.id) },
+    { label: "In anderes Notizbuch …", icon: <FolderInput size={15} />, onClick: () => ctx.setMoveCopy({ type: "section", label: section.name, sectionId: section.id, bookId }) },
+    "---",
+    { label: "Abschnitt löschen", icon: <Trash2 size={15} />, danger: true, confirm: true, onClick: () => ctx.removeSection(bookId, descendants()) },
+  ];
+
+  return (
+    <div role="group">
+      <div role="treeitem" aria-expanded={open} tabIndex={0} data-section-id={section.id}
+        className={`nt-row ${containsSelected && !open ? "text-indigo-700" : ""}`} style={{ paddingLeft: 6 + depth * 14 }}
+        onClick={toggle} onKeyDown={onRowKey(toggle)} onContextMenu={fromContext}
+        onDoubleClick={(e) => { e.stopPropagation(); ctx.setRenaming(section.id); }}>
+        <Chevron open={open} />
+        <Folder size={14} className="flex-shrink-0 text-amber-500/80" />
+        {renaming ? (
+          <TreeInput initial={section.name} placeholder="Name des Abschnitts"
+            onCommit={(name) => { ctx.setRenaming(null); updateSection(ctx.uid, bookId, section.id, { name }); }}
+            onCancel={() => ctx.setRenaming(null)} />
+        ) : (
+          <span className="flex-1 min-w-0 truncate font-medium">{section.name}</span>
+        )}
+        <span className={`nt-actions ${menu ? "nt-actions-open" : ""}`}>
+          <button type="button" className="nt-act" title="Neue Seite in diesem Abschnitt" aria-label="Neue Seite"
+            onClick={(e) => { e.stopPropagation(); ctx.createPage(target); }}><Plus size={15} /></button>
+          <button type="button" className="nt-act" title="Weitere Aktionen" aria-label="Weitere Aktionen" onClick={fromButton}><MoreHorizontal size={15} /></button>
+        </span>
+        {menu && <PopMenu at={menu.at} anchor={menu.anchor} items={items} onClose={close} />}
       </div>
 
       {open && (
-        <div className="ml-2 mt-0.5 space-y-0.5">
-          {topLevelSections.map((s) => (
-            <SectionNode key={s.id} uid={uid} bookId={notebook.id} section={s}
-              allSections={sections} depth={0}
-              selectedPage={selectedPage} onSelectPage={onSelectPage}
-              notebooks={notebooks} openIds={openIds} onToggleOpen={onToggleOpen} onMoveCopy={onMoveCopy} />
+        <>
+          {pages === null && <div className="h-7" />}
+          {pages?.map((p) => (
+            <PageRow key={p.id} ctx={ctx} bookId={bookId} section={section} page={p} depth={depth + 1} />
           ))}
-
-          {addingSection && (
-            <div className="flex gap-1 items-center py-1 px-2">
-              <input value={newSectionName} onChange={(e) => setNewSectionName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddSection(); if (e.key === "Escape") { setAddingSection(false); setNewSectionName(""); } }}
-                placeholder="Abschnittsname…" autoFocus
-                className="flex-1 px-2 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
-              <button onClick={handleAddSection} className="px-2 py-1.5 rounded-xl bg-indigo-500 text-white text-xs">↵</button>
+          {pages?.length === 0 && children.length === 0 && !addingSub && (
+            <button type="button" onClick={() => ctx.createPage(target)}
+              className="flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-indigo-600 py-1.5"
+              style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+              <Plus size={13} /> Erste Seite anlegen
+            </button>
+          )}
+          {children.map((child) => (
+            <SectionNode key={child.id} ctx={ctx} bookId={bookId} section={child} allSections={allSections} depth={depth + 1} />
+          ))}
+          {addingSub && (
+            <div className="nt-row" style={{ paddingLeft: 6 + (depth + 1) * 14 }}>
+              <Folder size={14} className="flex-shrink-0 text-amber-500/80" />
+              <TreeInput placeholder="Name des Unterabschnitts"
+                onCommit={(name) => ctx.commitSection(bookId, section.id, name)}
+                onCancel={() => ctx.setAdding(null)} />
             </div>
           )}
-
-          {topLevelSections.length === 0 && !addingSection && (
-            <p className="text-[11px] text-slate-400 px-3 py-1">Noch keine Abschnitte. Tippe auf ⋯ um einen hinzuzufügen.</p>
-          )}
-        </div>
+        </>
       )}
     </div>
   );
 }
 
-// ── Mobile Page Modal ─────────────────────────────────────────────────────────
-function PageModal({ uid, selectedPage, breadcrumb, onClose }) {
-  const [fullscreen, setFullscreen] = useState(false);
+function NotebookNode({ ctx, notebook }) {
+  const open = ctx.openIds.has(notebook.id);
+  const [sections, setSections] = useState(null);
+  const { menu, close, fromButton, fromContext } = useMenu();
+  const renaming = ctx.renaming === notebook.id;
+  const addingSection = ctx.adding?.type === "section" && ctx.adding.bookId === notebook.id && !ctx.adding.parentId;
 
-  if (fullscreen) {
-    return (
-      <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
-        <PageEditor uid={uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-          page={selectedPage.page} breadcrumb={breadcrumb} onPoppedOut={onClose}
-          fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!open) return;
+    return subscribeSections(ctx.uid, notebook.id, setSections);
+  }, [ctx.uid, notebook.id, open]);
+
+  const topLevel = (sections || []).filter((s) => !s.parentSectionId);
+  const startSection = () => { ctx.openMany([notebook.id]); ctx.setAdding({ type: "section", bookId: notebook.id, parentId: null }); };
+  const toggle = () => ctx.toggleOpen(notebook.id);
+
+  const items = [
+    { label: "Abschnitt anlegen", icon: <FolderPlus size={15} />, onClick: startSection },
+    { label: "Umbenennen", icon: <Pencil size={15} />, onClick: () => ctx.setRenaming(notebook.id) },
+    "---",
+    { label: "Notizbuch löschen", icon: <Trash2 size={15} />, danger: true, confirm: true, onClick: () => ctx.removeNotebook(notebook.id) },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(12px)" }}>
-      <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col" style={{ maxHeight: "92vh" }}>
-        <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
-          <div className="w-10 h-1 rounded-full bg-slate-300" />
-        </div>
-        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-100 flex-shrink-0">
-          <span className="text-sm font-semibold text-slate-700 truncate">{selectedPage.page.title}</span>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          <PageEditor uid={uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-            page={selectedPage.page} breadcrumb={breadcrumb} onPoppedOut={onClose}
-            fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
-        </div>
+    <div role="group" className="mb-0.5">
+      <div role="treeitem" aria-expanded={open} tabIndex={0} data-book-id={notebook.id}
+        className="nt-row nt-book" onClick={toggle} onKeyDown={onRowKey(toggle)} onContextMenu={fromContext}
+        onDoubleClick={(e) => { e.stopPropagation(); ctx.setRenaming(notebook.id); }}>
+        <Chevron open={open} />
+        <NotebookText size={15} className="flex-shrink-0 text-indigo-500" />
+        {renaming ? (
+          <TreeInput initial={notebook.name} placeholder="Name des Notizbuchs"
+            onCommit={(name) => { ctx.setRenaming(null); updateNotebook(ctx.uid, notebook.id, { name }); }}
+            onCancel={() => ctx.setRenaming(null)} />
+        ) : (
+          <span className="flex-1 min-w-0 truncate">{notebook.name}</span>
+        )}
+        <span className={`nt-actions ${menu ? "nt-actions-open" : ""}`}>
+          <button type="button" className="nt-act" title="Abschnitt anlegen" aria-label="Abschnitt anlegen"
+            onClick={(e) => { e.stopPropagation(); startSection(); }}><FolderPlus size={15} /></button>
+          <button type="button" className="nt-act" title="Weitere Aktionen" aria-label="Weitere Aktionen" onClick={fromButton}><MoreHorizontal size={15} /></button>
+        </span>
+        {menu && <PopMenu at={menu.at} anchor={menu.anchor} items={items} onClose={close} />}
       </div>
+
+      {open && (
+        <>
+          {topLevel.map((s) => (
+            <SectionNode key={s.id} ctx={ctx} bookId={notebook.id} section={s} allSections={sections} depth={1} />
+          ))}
+          {addingSection && (
+            <div className="nt-row" style={{ paddingLeft: 20 }}>
+              <Folder size={14} className="flex-shrink-0 text-amber-500/80" />
+              <TreeInput placeholder="Name des Abschnitts"
+                onCommit={(name) => ctx.commitSection(notebook.id, null, name)}
+                onCancel={() => ctx.setAdding(null)} />
+            </div>
+          )}
+          {sections?.length === 0 && !addingSection && (
+            <button type="button" onClick={startSection}
+              className="flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-indigo-600 py-1.5 pl-[34px]">
+              <Plus size={13} /> Ersten Abschnitt anlegen
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-// ── Main NotesPanel ───────────────────────────────────────────────────────────
+// ── Suche über alle Notizen ───────────────────────────────────────────────────
+function searchNotes(data, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle || !data) return [];
+  const out = [];
+  for (const book of data) {
+    const byId = new Map(book.sections.map((s) => [s.id, s]));
+    for (const section of book.sections) {
+      // Pfad bis zum Notizbuch (verschachtelte Abschnitte)
+      const chain = [];
+      for (let s = section, n = 0; s && n < 10; s = byId.get(s.parentSectionId), n++) chain.unshift(s);
+      if (chain[0]?.parentSectionId && !byId.has(chain[0].parentSectionId)) continue; // verwaist
+      for (const page of section.pages) {
+        const title = page.title || "";
+        const text = pageText(page);
+        const inTitle = title.toLowerCase().includes(needle);
+        const at = text.toLowerCase().indexOf(needle);
+        if (!inTitle && at < 0) continue;
+        const start = Math.max(0, at - 40);
+        out.push({
+          key: page.id,
+          page,
+          bookId: book.id,
+          sectionId: section.id,
+          sectionName: section.name,
+          crumb: [book.name, ...chain.map((s) => s.name)].join(" › "),
+          openIds: [book.id, ...chain.map((s) => s.id)],
+          snippet: at >= 0 ? `${start > 0 ? "…" : ""}${text.slice(start, at + needle.length + 90)}` : text.slice(0, 110),
+          score: (inTitle ? 2 : 0) + (at >= 0 ? 1 : 0),
+          time: page.updatedAt?.toMillis?.() || 0,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => b.score - a.score || b.time - a.time).slice(0, 60);
+}
+
+// ── Notizbereich ──────────────────────────────────────────────────────────────
 // fill: volle Höhe des Elternelements (Desktop-App) statt Fensterhöhe
 export default function NotesPanel({ fill = false }) {
   const { user } = useFirebaseAuth();
-  const [notebooks, setNotebooks] = useState([]);
-  const [selectedPage, setSelectedPage] = useState(null);
-  const [addingBook, setAddingBook] = useState(false);
-  const [newBookName, setNewBookName] = useState("");
+  const uid = user.uid;
+  const isMobile = useIsMobile();
+  const [notebooks, setNotebooks] = useState(null);
+  const [openIds, setOpenIds] = useState(() => new Set());
+  const [selected, setSelected] = useState(null); // { bookId, sectionId, sectionName, page, focusTitle }
+  const [current, setCurrent] = useState(null); // Abschnitt für "Neue Seite"
+  const [adding, setAdding] = useState(null); // { type: "book" } | { type: "section", bookId, parentId }
+  const [renaming, setRenaming] = useState(null);
+  const [moveCopy, setMoveCopy] = useState(null);
   const [fullscreen, setFullscreen] = useState(false);
-  const [moveCopyTarget, setMoveCopyTarget] = useState(null); // { type, label, ... }
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const [allData, setAllData] = useState(null);
+  const [recents, setRecents] = useState(() => loadRecents(uid));
+  const [treeHidden, setTreeHidden] = useState(() => store.get("my2do.notes.treeHidden", false) === true);
+  const [treeWidth, setTreeWidth] = useState(() => {
+    const w = Number(store.get("my2do.notes.treeWidth", 272));
+    return w >= 200 && w <= 460 ? w : 272;
+  });
+  const searchRef = useRef(null);
+  const saveTreeTimer = useRef(null);
+  const loadedAt = useRef(0);
+  const notebooksRef = useRef(notebooks);
+  notebooksRef.current = notebooks;
 
-  // Persistent open/close state — stored as a Set of IDs
-  const [openIds, setOpenIds] = useState(new Set());
-  const saveTimerRef = useRef(null);
+  useEffect(() => subscribeNotebooks(uid, setNotebooks), [uid]);
 
-  // Reactive mobile detection
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  // Aufgeklappte Knoten (geräteübergreifend gespeichert)
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
-    const handler = (e) => setIsMobile(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
+    getNotesTreeState(uid).then((ids) => setOpenIds((prev) => new Set([...ids, ...prev]))).catch(() => {});
+  }, [uid]);
 
-  // Load openIds from Firestore on mount
-  useEffect(() => {
-    getNotesTreeState(user.uid).then((ids) => setOpenIds(new Set(ids)));
-  }, [user.uid]);
-
-  // Toggle open state, persist with debounce
-  const handleToggleOpen = useCallback((id, forceOpen = false) => {
+  const persistTree = (next) => {
+    clearTimeout(saveTreeTimer.current);
+    saveTreeTimer.current = setTimeout(() => saveNotesTreeState(uid, [...next]).catch(() => {}), 1000);
+  };
+  const toggleOpen = useCallback((id) => {
     setOpenIds((prev) => {
       const next = new Set(prev);
-      if (forceOpen) next.add(id);
-      else if (next.has(id)) next.delete(id);
-      else next.add(id);
-      // Debounced save
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        saveNotesTreeState(user.uid, [...next]);
-      }, 1000);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      persistTree(next);
       return next;
     });
-  }, [user.uid]);
+   
+  }, [uid]);
+  const openMany = useCallback((ids) => {
+    setOpenIds((prev) => {
+      if (ids.every((id) => !id || prev.has(id))) return prev;
+      const next = new Set(prev);
+      ids.forEach((id) => id && next.add(id));
+      persistTree(next);
+      return next;
+    });
+   
+  }, [uid]);
 
-  useEffect(() => subscribeNotebooks(user.uid, setNotebooks), [user.uid]);
+  const crumbOf = (bookId, sectionName) =>
+    [notebooksRef.current?.find((nb) => nb.id === bookId)?.name, sectionName].filter(Boolean).join(" › ");
 
-  const handleAddBook = async () => {
-    const n = newBookName.trim();
-    if (!n) return;
-    const ref = await addNotebook(user.uid, n);
-    setNewBookName(""); setAddingBook(false);
+  const openPage = useCallback((sel) => {
+    setSelected(sel);
+    if (!sel) return;
+    setCurrent({ bookId: sel.bookId, sectionId: sel.sectionId, sectionName: sel.sectionName });
+    setRecents(pushRecent(uid, {
+      bookId: sel.bookId, sectionId: sel.sectionId, pageId: sel.page.id,
+      title: sel.page.title || "", crumb: sel.crumb || crumbOf(sel.bookId, sel.sectionName),
+    }));
+   
+  }, [uid]);
+
+  // Seite aus "Zuletzt geöffnet" laden; gibt es sie nicht mehr, verschwindet sie aus der Liste
+  const openRecent = useCallback(async (r, isCancelled = () => false) => {
+    const [page, crumb] = await Promise.all([
+      getPage(uid, r.bookId, r.sectionId, r.pageId),
+      getNoteBreadcrumb(uid, r.bookId, r.sectionId).catch(() => ({})),
+    ]);
+    if (isCancelled()) return;
+    if (!page || !crumb.bookName || !crumb.sectionName) {
+      setRecents(removeRecent(uid, r.pageId));
+      return;
+    }
+    openMany([r.bookId, r.sectionId]);
+    openPage({
+      bookId: r.bookId, sectionId: r.sectionId, sectionName: crumb.sectionName, page,
+      crumb: `${crumb.bookName} › ${crumb.sectionName}`,
+    });
+  }, [uid, openMany, openPage]);
+
+  // Am großen Bildschirm dort weitermachen, wo man aufgehört hat
+  useEffect(() => {
+    if (window.innerWidth < 640) return;
+    const last = loadRecents(uid)[0];
+    if (!last) return;
+    let cancelled = false;
+    openRecent(last, () => cancelled);
+    return () => { cancelled = true; };
+   
+  }, [uid]);
+
+  const createPage = useCallback((target) => {
+    if (!target) return;
+    const ref = addPage(uid, target.bookId, target.sectionId, "");
+    openMany([target.bookId, target.sectionId]);
+    setQuery("");
+    openPage({
+      ...target,
+      page: { id: ref.id, title: "", content: "", createdAt: new Date(), updatedAt: new Date() },
+      focusTitle: true,
+    });
+  }, [uid, openMany, openPage]);
+
+  const commitBook = (name) => {
+    const ref = addNotebook(uid, name);
+    openMany([ref.id]);
+    // gleich den ersten Abschnitt benennen
+    setAdding({ type: "section", bookId: ref.id, parentId: null });
+  };
+  const commitSection = (bookId, parentId, name) => {
+    const ref = addSection(uid, bookId, name, parentId);
+    setAdding(null);
+    openMany([bookId, parentId, ref.id]);
+    setCurrent({ bookId, sectionId: ref.id, sectionName: name });
   };
 
-  // "Notizbuch › Abschnitt" – Kopfzeile des Word-Exports
-  const breadcrumb = selectedPage
-    ? [notebooks.find((nb) => nb.id === selectedPage.bookId)?.name, selectedPage.sectionName]
-        .filter(Boolean).join(" › ")
-    : "";
+  const removePage = (bookId, sectionId, pageId) => {
+    deletePage(uid, bookId, sectionId, pageId);
+    setRecents(removeRecent(uid, pageId));
+    if (selected?.page.id === pageId) setSelected(null);
+  };
+  const removeSection = (bookId, sectionIds) => {
+    deleteSection(uid, bookId, sectionIds[0]);
+    if (selected && selected.bookId === bookId && sectionIds.includes(selected.sectionId)) setSelected(null);
+    if (current && sectionIds.includes(current.sectionId)) setCurrent(null);
+    setRecents(saveRecents(uid, loadRecents(uid).filter((r) => !sectionIds.includes(r.sectionId))));
+  };
+  const removeNotebook = (bookId) => {
+    deleteNotebook(uid, bookId);
+    if (selected?.bookId === bookId) setSelected(null);
+    if (current?.bookId === bookId) setCurrent(null);
+    setRecents(saveRecents(uid, loadRecents(uid).filter((r) => r.bookId !== bookId)));
+  };
 
-  // Desktop fullscreen overlay
-  if (!isMobile && fullscreen && selectedPage) {
+  // Suche: alle Seiten bei Bedarf laden (max. alle 30 s neu)
+  useEffect(() => {
+    if (!query.trim()) return;
+    if (allData && Date.now() - loadedAt.current < 30000) return;
+    loadedAt.current = Date.now();
+    getAllNotebookData(uid).then(setAllData).catch((err) => console.error("Notizsuche:", err));
+  }, [query, uid, allData]);
+  const results = useMemo(() => searchNotes(allData, deferredQuery), [allData, deferredQuery]);
+  const needle = deferredQuery.trim().toLowerCase();
+
+  // Tastatur: Strg+N neue Seite, Strg+F Suche (nur solange die Notizen offen sind)
+  const keyRef = useRef(null);
+  keyRef.current = { current, createPage };
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "n" && !e.shiftKey && keyRef.current.current) {
+        e.preventDefault();
+        keyRef.current.createPage(keyRef.current.current);
+      } else if (k === "f") {
+        e.preventDefault();
+        setTreeHidden(false);
+        setTimeout(() => { searchRef.current?.focus(); searchRef.current?.select(); }, 0);
+      }
+    };
+    // Capture: vor den allgemeinen Kürzeln der Desktop-App (Strg+N = neues 2do)
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  useEffect(() => { store.set("my2do.notes.treeHidden", treeHidden); }, [treeHidden]);
+
+  // Breite der Notizbuch-Leiste ziehen
+  const startResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = treeWidth;
+    let w = startW;
+    const move = (ev) => { w = Math.max(200, Math.min(460, startW + ev.clientX - startX)); setTreeWidth(w); };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      store.set("my2do.notes.treeWidth", w);
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const ctx = {
+    uid, openIds, toggleOpen, openMany, selected, openPage, setCurrent, createPage,
+    adding, setAdding, commitSection, renaming, setRenaming, setMoveCopy,
+    removePage, removeSection, removeNotebook,
+  };
+
+  const breadcrumb = selected ? crumbOf(selected.bookId, selected.sectionName) : "";
+
+  const sidebar = (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-center gap-1 px-3 pt-3 pb-2 flex-shrink-0">
+        <span className="flex-1 text-[13px] font-semibold text-slate-700">Notizbücher</span>
+        <button type="button" className="btn-icon btn-icon-sm" disabled={!current}
+          title={current ? `Neue Seite in „${current.sectionName}" (Strg+N)` : "Erst einen Abschnitt öffnen"}
+          aria-label="Neue Seite" onClick={() => createPage(current)}>
+          <FilePlus2 size={16} />
+        </button>
+        <button type="button" className="btn-icon btn-icon-sm" title="Neues Notizbuch" aria-label="Neues Notizbuch"
+          onClick={() => { setQuery(""); setAdding({ type: "book" }); }}>
+          <BookPlus size={16} />
+        </button>
+      </div>
+      <div className="px-3 pb-2 flex-shrink-0">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); setQuery(""); e.currentTarget.blur(); }
+              if (e.key === "Enter" && results[0]) {
+                const r = results[0];
+                openMany(r.openIds);
+                openPage({ bookId: r.bookId, sectionId: r.sectionId, sectionName: r.sectionName, page: r.page });
+              }
+            }}
+            placeholder="Notizen durchsuchen …" aria-label="Notizen durchsuchen"
+            className="glass-input w-full h-8 pl-8 pr-7 rounded-lg text-[13px]" />
+          {query && (
+            <button type="button" onClick={() => setQuery("")} aria-label="Suche leeren"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-md flex items-center justify-center text-slate-400 hover:bg-slate-200/70">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-3" role="tree" aria-label="Notizbücher">
+        {query.trim() ? (
+          <div className="space-y-0.5">
+            {!allData && <p className="text-[12px] text-slate-400 px-2 py-3">Suche …</p>}
+            {allData && results.length === 0 && (
+              <p className="text-[12px] text-slate-400 px-2 py-3">Nichts gefunden für „{query.trim()}".</p>
+            )}
+            {results.map((r) => (
+              <button key={r.key} type="button" data-search-hit={r.page.id}
+                onClick={() => {
+                  openMany(r.openIds);
+                  openPage({ bookId: r.bookId, sectionId: r.sectionId, sectionName: r.sectionName, page: r.page });
+                }}
+                className={`nt-search-hit w-full text-left px-2.5 py-2 rounded-lg transition-colors ${selected?.page.id === r.page.id ? "bg-indigo-50" : "hover:bg-slate-100/80"}`}>
+                <span className="block text-[13px] font-medium text-slate-700 truncate">
+                  <Highlight text={r.page.title || UNTITLED} needle={needle} />
+                </span>
+                <span className="block text-[11px] text-slate-400 truncate">{r.crumb}</span>
+                {r.snippet && (
+                  <span className="block text-[12px] text-slate-500 leading-snug mt-0.5 line-clamp-2">
+                    <Highlight text={r.snippet} needle={needle} />
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            {adding?.type === "book" && (
+              <div className="nt-row nt-book">
+                <NotebookText size={15} className="flex-shrink-0 text-indigo-500 ml-5" />
+                <TreeInput placeholder="Name des Notizbuchs" onCommit={commitBook} onCancel={() => setAdding(null)} />
+              </div>
+            )}
+            {notebooks === null && <div className="flex justify-center py-6"><div className="w-5 h-5 border-2 border-indigo-300 border-t-transparent rounded-full animate-spin" /></div>}
+            {notebooks?.length === 0 && adding?.type !== "book" && (
+              <div className="text-center px-3 py-8">
+                <p className="text-[13px] text-slate-500 font-medium">Noch keine Notizbücher</p>
+                <button type="button" onClick={() => setAdding({ type: "book" })}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white text-[13px] font-semibold hover:bg-indigo-600">
+                  <BookPlus size={15} /> Notizbuch anlegen
+                </button>
+              </div>
+            )}
+            {notebooks?.map((nb) => <NotebookNode key={nb.id} ctx={ctx} notebook={nb} />)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  const empty = (
+    <div className="h-full overflow-y-auto flex items-center justify-center px-6 py-10">
+      <div className="w-full max-w-sm text-center">
+        <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4 text-indigo-500">
+          <FileText size={26} strokeWidth={1.6} />
+        </div>
+        <p className="text-slate-600 text-[15px] font-semibold">Keine Seite geöffnet</p>
+        <p className="text-slate-400 text-[13px] mt-1 leading-relaxed">
+          Wähle links eine Seite oder lege mit <Plus size={12} className="inline -mt-0.5" /> an einem Abschnitt eine neue an.
+        </p>
+        {current && (
+          <button type="button" onClick={() => createPage(current)}
+            className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-500 text-white text-[13px] font-semibold hover:bg-indigo-600">
+            <FilePlus2 size={15} /> Neue Seite in „{current.sectionName}"
+          </button>
+        )}
+        {recents.length > 0 && (
+          <div className="mt-7 text-left">
+            <p className="section-label flex items-center gap-1.5 px-1 mb-1.5"><History size={12} /> Zuletzt geöffnet</p>
+            {recents.slice(0, 6).map((r) => (
+              <button key={r.pageId} type="button" onClick={() => openRecent(r)}
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left hover:bg-slate-100/80">
+                <FileText size={14} className="text-slate-400 flex-shrink-0" />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] text-slate-700 truncate">{r.title || UNTITLED}</span>
+                  {r.crumb && <span className="block text-[11px] text-slate-400 truncate">{r.crumb}</span>}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const editorProps = selected && {
+    uid,
+    bookId: selected.bookId,
+    sectionId: selected.sectionId,
+    page: selected.page,
+    breadcrumb,
+    autoFocusTitle: !!selected.focusTitle,
+    onClose: () => setSelected(null),
+    onPoppedOut: () => { setFullscreen(false); setSelected(null); },
+    onDeleted: () => { setRecents(removeRecent(uid, selected.page.id)); setSelected(null); setFullscreen(false); },
+    onRequestMove: () => setMoveCopy({
+      type: "page", label: selected.page.title, pageId: selected.page.id,
+      bookId: selected.bookId, sectionId: selected.sectionId,
+    }),
+    onSaved: (patch) => { if ("title" in patch) setRecents(patchRecent(uid, selected.page.id, { title: patch.title })); },
+  };
+
+  const moveCopyModal = moveCopy && (
+    <MoveCopyModal uid={uid} {...moveCopy} notebooks={notebooks || []}
+      onClose={() => setMoveCopy(null)}
+      onDone={(action) => {
+        if (action === "move" && selected
+          && ((moveCopy.type === "page" && selected.page.id === moveCopy.pageId)
+            || (moveCopy.type === "section" && selected.sectionId === moveCopy.sectionId))) {
+          setSelected(null);
+        }
+        setMoveCopy(null);
+      }} />
+  );
+
+  // ── Handy: Liste, Seite öffnet bildschirmfüllend ──
+  if (isMobile) {
     return (
-      <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-2xl flex flex-col">
-        <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-          page={selectedPage.page} breadcrumb={breadcrumb}
-          onPoppedOut={() => { setFullscreen(false); setSelectedPage(null); }}
-          fullscreen={true} onToggleFullscreen={() => setFullscreen(false)} />
+      <>
+        <div className="glass rounded-[24px] overflow-hidden flex flex-col" style={{ minHeight: "70vh" }}>
+          {sidebar}
+        </div>
+        {selected && createPortal(
+          <div className="fixed inset-0 z-50 bg-white flex flex-col"
+            style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+            <PageEditor key={selected.page.id} {...editorProps} layout="sheet" />
+          </div>,
+          document.body,
+        )}
+        {moveCopyModal}
+      </>
+    );
+  }
+
+  // ── Browser: Vollbild ──
+  if (fullscreen && selected) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <PageEditor key={selected.page.id} {...editorProps} fullscreen onToggleFullscreen={() => setFullscreen(false)} />
+        {moveCopyModal}
+      </div>,
+      document.body,
+    );
+  }
+
+  const editorPane = selected
+    ? <PageEditor key={selected.page.id} {...editorProps}
+        treeHidden={treeHidden} onToggleTree={() => setTreeHidden((v) => !v)}
+        onToggleFullscreen={fill ? undefined : () => setFullscreen(true)} />
+    : empty;
+
+  // ── Desktop-App: eine Fläche, Leiste links (Breite ziehbar, ausblendbar) ──
+  if (fill) {
+    return (
+      <div className="flex h-full min-h-0">
+        {!treeHidden && (
+          <aside className="relative flex-shrink-0 border-r border-slate-200/70 bg-slate-50/60" style={{ width: treeWidth }}>
+            {sidebar}
+            <div onPointerDown={startResize} title="Breite ändern"
+              className="absolute top-0 -right-[3px] w-[6px] h-full cursor-col-resize z-10 hover:bg-indigo-300/50 transition-colors" />
+          </aside>
+        )}
+        <main className="flex-1 min-w-0 flex flex-col bg-white/70">{editorPane}</main>
+        {moveCopyModal}
       </div>
     );
   }
 
-  const sidebarContent = (
-    <>
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 flex-shrink-0">
-        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Notizbücher</span>
-        <button onClick={() => setAddingBook(!addingBook)}
-          className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center hover:bg-indigo-200 transition-all">
-          <PlusIcon />
-        </button>
-      </div>
-
-      {addingBook && (
-        <div className="flex gap-1 items-center px-2 py-2 border-b border-slate-100">
-          <input value={newBookName} onChange={(e) => setNewBookName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleAddBook(); if (e.key === "Escape") { setAddingBook(false); setNewBookName(""); } }}
-            placeholder="Notizbuchname…" autoFocus
-            className="flex-1 px-2 py-1.5 rounded-xl bg-white/80 border border-slate-200 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
-          <button onClick={handleAddBook} className="px-2 py-1.5 rounded-xl bg-indigo-500 text-white text-xs">↵</button>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
-        {notebooks.length === 0 && !addingBook && (
-          <p className="text-[11px] text-slate-400 px-2 py-3 text-center">Klick auf + um dein erstes Notizbuch zu erstellen.</p>
-        )}
-        {notebooks.map((nb) => (
-          <NotebookNode key={nb.id} uid={user.uid} notebook={nb}
-            selectedPage={selectedPage} onSelectPage={setSelectedPage}
-            notebooks={notebooks} openIds={openIds} onToggleOpen={handleToggleOpen}
-            onMoveCopy={setMoveCopyTarget} />
-        ))}
-      </div>
-    </>
-  );
-
+  // ── Browser: zwei Karten ──
   return (
-    <>
-      {isMobile ? (
-        <>
-          <div className="glass rounded-[24px] flex flex-col overflow-hidden" style={{ minHeight: "70vh" }}>
-            {sidebarContent}
-          </div>
-          {selectedPage && (
-            <PageModal uid={user.uid} selectedPage={selectedPage} breadcrumb={breadcrumb}
-              onClose={() => setSelectedPage(null)} />
-          )}
-        </>
-      ) : (
-        <div className="flex gap-3" style={fill ? { height: "100%" } : { minHeight: "70vh", height: "calc(100vh - 110px)", maxHeight: "1100px" }}>
-          <div className="w-52 xl:w-64 flex-shrink-0 glass rounded-[24px] flex flex-col overflow-hidden">
-            {sidebarContent}
-          </div>
-          <div className="flex-1 glass rounded-[24px] overflow-hidden flex flex-col">
-            {selectedPage ? (
-              <PageEditor uid={user.uid} bookId={selectedPage.bookId} sectionId={selectedPage.sectionId}
-                page={selectedPage.page} breadcrumb={breadcrumb}
-                onPoppedOut={() => setSelectedPage(null)}
-                fullscreen={false} onToggleFullscreen={fill ? undefined : () => setFullscreen(true)} />
-            ) : (
-              <div className="flex items-center justify-center h-full text-center px-6 py-12">
-                <div>
-                  <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5" strokeLinecap="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                      <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-                    </svg>
-                  </div>
-                  <p className="text-slate-500 text-sm font-medium mb-1">Keine Seite ausgewählt</p>
-                  <p className="text-slate-400 text-xs">Wähle eine Seite aus der linken Leiste.</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="flex gap-3" style={{ minHeight: "70vh", height: "calc(100vh - 110px)", maxHeight: "1100px" }}>
+      {!treeHidden && (
+        <aside className="w-60 xl:w-72 flex-shrink-0 glass rounded-[24px] overflow-hidden">{sidebar}</aside>
       )}
-
-      {/* Move/Copy Modal */}
-      {moveCopyTarget && (
-        <MoveCopyModal
-          uid={user.uid}
-          {...moveCopyTarget}
-          notebooks={notebooks}
-          onDone={() => setMoveCopyTarget(null)}
-          onClose={() => setMoveCopyTarget(null)}
-        />
-      )}
-    </>
+      <main className="flex-1 min-w-0 glass rounded-[24px] overflow-hidden flex flex-col">{editorPane}</main>
+      {moveCopyModal}
+    </div>
   );
 }
