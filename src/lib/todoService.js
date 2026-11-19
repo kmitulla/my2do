@@ -358,6 +358,40 @@ export const LOCK_HEARTBEAT_MS = 25 * 1000;
 // Eindeutig pro Tab/Fenster, damit auch zwei Geräte desselben Users sich sperren
 export const SESSION_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+// Sitzungen in diesem Browser melden sich alle paar Sekunden (localStorage).
+// Eine Sperre aus einer Sitzung dieses Browsers, die sich nicht mehr meldet
+// (Seite neu geladen, Tab geschlossen, App im Hintergrund beendet), blockiert
+// nicht mehr – sonst wäre das zuletzt offene 2do nach dem Neuladen bis zu
+// 90 s gesperrt.
+const store = (() => { try { return window.localStorage; } catch { return null; } })();
+const ALIVE_PREFIX = "my2do.alive.";
+const ALIVE_MAX_AGE = 20 * 1000;
+export const DEVICE_ID = (() => {
+  try {
+    let id = store.getItem("my2do.device");
+    if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); store.setItem("my2do.device", id); }
+    return id;
+  } catch { return null; }
+})();
+if (store && typeof window !== "undefined") {
+  const beat = () => { try { store.setItem(ALIVE_PREFIX + SESSION_ID, String(Date.now())); } catch { /* voll/privat */ } };
+  beat();
+  setInterval(beat, 5000);
+  window.addEventListener("pageshow", beat);
+  window.addEventListener("pagehide", () => { try { store.removeItem(ALIVE_PREFIX + SESSION_ID); } catch { /* egal */ } });
+  // Einträge längst beendeter Sitzungen aufräumen
+  try {
+    for (let i = store.length - 1; i >= 0; i--) {
+      const k = store.key(i);
+      if (k?.startsWith(ALIVE_PREFIX) && Date.now() - Number(store.getItem(k)) > 24 * 3600 * 1000) store.removeItem(k);
+    }
+  } catch { /* egal */ }
+}
+const deadLocalSession = (lock) => {
+  if (!store || !DEVICE_ID || lock.device !== DEVICE_ID) return false;
+  try { return Date.now() - Number(store.getItem(ALIVE_PREFIX + lock.session) || 0) > ALIVE_MAX_AGE; } catch { return false; }
+};
+
 const lockTime = (lock) => {
   const at = lock?.at;
   if (!at) return 0;
@@ -372,7 +406,8 @@ export const activeLock = (shared) => {
 
 export const lockedByOther = (shared) => {
   const lock = activeLock(shared);
-  return lock && lock.session !== SESSION_ID ? lock : null;
+  if (!lock || lock.session === SESSION_ID || deadLocalSession(lock)) return null;
+  return lock;
 };
 
 // Transaktionen brauchen den Server — offline nicht ewig warten
@@ -392,7 +427,7 @@ export const acquireEditLock = (segments, uid, name, { force = false } = {}) =>
     if (!snap.exists()) return { ok: false, lock: null };
     const other = lockedByOther(snap.data());
     if (other && !(force && other.uid === uid)) return { ok: false, lock: other };
-    tx.update(ref, { editLock: { uid, name, session: SESSION_ID, at: serverTimestamp() } });
+    tx.update(ref, { editLock: { uid, name, session: SESSION_ID, device: DEVICE_ID, at: serverTimestamp() } });
     return { ok: true };
   }));
 
@@ -493,21 +528,27 @@ export const subscribePages = (uid, bookId, sectionId, callback) => {
   return withPendingCleanup(key, unsub);
 };
 
+// Alle Notizbücher mit Abschnitten und Seiten (Suche) – parallel geladen
 export const getAllNotebookData = async (uid) => {
   const booksSnap = await getDocs(notebooksCol(uid));
-  const books = [];
-  for (const bDoc of booksSnap.docs) {
-    const book = { id: bDoc.id, ...bDoc.data(), sections: [] };
+  return Promise.all(booksSnap.docs.map(async (bDoc) => {
     const sectSnap = await getDocs(sectionsCol(uid, bDoc.id));
-    for (const sDoc of sectSnap.docs) {
-      const section = { id: sDoc.id, ...sDoc.data(), pages: [] };
+    const sections = await Promise.all(sectSnap.docs.map(async (sDoc) => {
       const pagesSnap = await getDocs(pagesCol(uid, bDoc.id, sDoc.id));
-      section.pages = pagesSnap.docs.map((p) => ({ id: p.id, ...p.data() }));
-      book.sections.push(section);
-    }
-    books.push(book);
+      return { id: sDoc.id, ...sDoc.data(), pages: pagesSnap.docs.map((p) => ({ id: p.id, ...docData(p) })) };
+    }));
+    return { id: bDoc.id, ...bDoc.data(), sections };
+  }));
+};
+
+// Einzelne Notizseite laden (zuletzt geöffnete Seiten); null = gibt es nicht mehr
+export const getPage = async (uid, bookId, sectionId, pageId) => {
+  try {
+    const snap = await getDoc(doc(db, "users", uid, "notebooks", bookId, "sections", sectionId, "pages", pageId));
+    return snap.exists() ? { id: snap.id, ...docData(snap) } : null;
+  } catch {
+    return null;
   }
-  return books;
 };
 
 // Namen von Notizbuch + Abschnitt (Kopfzeile im eigenen Notiz-Fenster)
