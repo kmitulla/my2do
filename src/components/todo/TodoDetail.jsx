@@ -41,7 +41,7 @@ const Label = ({ children, icon }) => (
  * "pane": Detailbereich der Desktop-App (speichert automatisch, sperrt erst
  * beim Bearbeiten, übernimmt Änderungen aus der Liste).
  */
-export default function TodoDetail({ todo, categories, onClose, onDelete, onMinimize, initialDraft, layout = "modal" }) {
+export default function TodoDetail({ todo, categories, onClose, onDelete, onMinimize, initialDraft, layout = "modal", closeRequestRef }) {
   const { user, userProfile } = useFirebaseAuth();
   const isWindow = layout === "window";
   const isPane = layout === "pane";
@@ -59,6 +59,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // Favorit wird sofort gespeichert (nicht erst mit "Speichern")
   const [favorite, setFavorite] = useState(!!todo.favorite);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Blatt schließen mit ungespeicherten Änderungen → Rückfrage statt still verwerfen
+  const [confirmClose, setConfirmClose] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   // Klick irgendwo anders → "Wirklich?"-Zustand zurücksetzen
   const deleteBtnRef = useConfirmReset(confirmDelete, () => setConfirmDelete(false));
@@ -222,6 +224,21 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
     const ok = persist();
     setSaving(false);
     if (ok) onClose();
+  };
+
+  // Schließen (X, Hintergrund, Zurück-Taste, nach unten wischen): ohne
+  // Änderungen sofort, sonst erst nachfragen. true = schließt
+  const requestClose = () => {
+    if (isPane) { flushRef.current(); onClose(); return true; }
+    if (isDirtyRef.current && !allLocked) { setConfirmClose(true); return false; }
+    onClose();
+    return true;
+  };
+  if (closeRequestRef) closeRequestRef.current = requestClose;
+  const discardAndClose = () => {
+    isDirtyRef.current = false;
+    setConfirmClose(false);
+    onClose();
   };
 
   // Speichern ohne zu schließen
@@ -415,7 +432,10 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   // Tastenkürzel im Editor: Strg+S speichern, Strg+Enter speichern & schließen,
   // Esc schließen (ungespeicherte Änderungen werden vorher gespeichert)
   const keyActionsRef = useRef({});
-  keyActionsRef.current = { saveOnly, save, showShare, closeShare, popOut: canPopOut ? popOut : null };
+  keyActionsRef.current = {
+    saveOnly, save, showShare, closeShare, popOut: canPopOut ? popOut : null,
+    confirmClose, cancelClose: () => setConfirmClose(false),
+  };
   useEffect(() => {
     const onKey = (e) => {
       const a = keyActionsRef.current;
@@ -431,7 +451,8 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
         a.save();
       } else if (e.key === "Escape" && !e.defaultPrevented) {
         e.preventDefault();
-        if (a.showShare) a.closeShare();
+        if (a.confirmClose) a.cancelClose();
+        else if (a.showShare) a.closeShare();
         else if (isDirtyRef.current || isPane) a.save();
         else onClose();
       }
@@ -728,9 +749,9 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
   );
 
   const footer = (
-    <div className={`flex-shrink-0 flex gap-2 ${isWindow ? "max-w-6xl w-full mx-auto px-5 py-3" : "border-t border-white/60 p-3.5 rounded-b-[28px]"}`}>
+    <div className={`flex-shrink-0 flex gap-2 ${isWindow ? "max-w-6xl w-full mx-auto px-5 py-3" : "border-t border-white/60 p-3.5 pb-[calc(0.875rem+var(--safe-bottom))] sm:pb-3.5 rounded-b-[28px]"}`}>
       <button onClick={insertTimestampInDescription} title="Zeitmarke einfügen (Strg+T)" disabled={commonLocked}
-        className="w-10 h-10 rounded-2xl glass-chip text-indigo-500 flex items-center justify-center flex-shrink-0 disabled:opacity-40">
+        className="hidden sm:flex w-10 h-10 rounded-2xl glass-chip text-indigo-500 items-center justify-center flex-shrink-0 disabled:opacity-40">
         <Clock size={16} />
       </button>
       <button ref={archiveBtnRef} onClick={handleArchive} disabled={commonLocked}
@@ -865,11 +886,11 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
 
   // ── Blatt im Dashboard: einspaltig ─────────────────────────────────────────
   return (
-    <div className="w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl glass-strong rounded-t-[28px] sm:rounded-[28px] max-h-[95vh] flex flex-col mx-auto"
+    <div className="w-full sm:max-w-lg lg:max-w-2xl xl:max-w-3xl glass-strong rounded-t-[28px] sm:rounded-[28px] sheet-max-h flex flex-col mx-auto"
         style={{ touchAction: "pan-y", overflowX: "hidden", maxWidth: "100vw" }}>
 
         {/* Kopf */}
-        <div className="flex-shrink-0 border-b border-white/60 pl-5 pr-2.5 py-2.5 flex items-center gap-2 rounded-t-[28px]">
+        <div data-sheet-grab className="flex-shrink-0 border-b border-white/60 pl-5 pr-2.5 py-2.5 flex items-center gap-2 rounded-t-[28px]">
           <div className={`w-3 h-3 rounded-full flex-shrink-0 ${PRIO_STYLES[form.prio] || "bg-orange-400"}`} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -889,13 +910,13 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
               <Minus size={17} />
             </button>
           )}
-          <button onClick={onClose} title="Schließen ohne zu speichern" className="btn-icon">
+          <button onClick={requestClose} title="Schließen" aria-label="Schließen" className="btn-icon">
             <X size={17} />
           </button>
         </div>
 
         {/* Inhalt */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-5 space-y-4" style={{ overflowX: "hidden", maxWidth: "100%" }}>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-5 space-y-4" style={{ overflowX: "hidden", maxWidth: "100%", "--re-sticky-top": "-1.25rem" }}>
           {membersBlock}
           {lockBanner}
           {sharePanel}
@@ -909,7 +930,20 @@ export default function TodoDetail({ todo, categories, onClose, onDelete, onMini
           {exportBlock}
         </div>
 
-        {footer}
+        {confirmClose ? (
+          <div role="alertdialog" aria-label="Ungespeicherte Änderungen"
+            className="flex-shrink-0 flex items-center gap-2 border-t border-white/60 p-3.5 pb-[calc(0.875rem+var(--safe-bottom))] sm:pb-3.5 rounded-b-[28px] bg-amber-50/80">
+            <p className="flex-1 min-w-0 text-[13px] font-medium text-slate-700 leading-tight">Änderungen speichern?</p>
+            <button onClick={discardAndClose}
+              className="px-3.5 py-2.5 rounded-2xl text-sm font-medium bg-white/80 border border-slate-200 text-slate-600">
+              Verwerfen
+            </button>
+            <button onClick={save} disabled={saving}
+              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white text-sm font-semibold btn-liquid disabled:opacity-60">
+              Speichern
+            </button>
+          </div>
+        ) : footer}
     </div>
   );
 }

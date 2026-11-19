@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import TodoDetail from "./TodoDetail";
+import useBackClose from "@/hooks/useBackClose";
 
 /**
  * iPhone-style glass sheet animation wrapper for TodoDetail.
@@ -25,6 +26,42 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete, o
       closeRef.current = false;
       onClose();
     }, 380);
+  };
+
+  // Schließwunsch von außen (Hintergrund, Zurück-Taste, nach unten wischen):
+  // TodoDetail entscheidet – bei ungespeicherten Änderungen fragt es nach
+  const closeRequestRef = useRef(null);
+  const requestClose = () => (closeRequestRef.current ? closeRequestRef.current() : (handleClose(), true));
+  useBackClose(true, () => (closeRef.current ? true : requestClose()));
+
+  // Seite dahinter nicht mitscrollen lassen
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // Handy: Blatt am Kopf nach unten ziehen schließt es
+  const [dragY, setDragY] = useState(0);
+  const drag = useRef(null);
+  const onTouchStart = (e) => {
+    if (window.innerWidth >= 640 || e.touches.length !== 1 || !e.target.closest?.("[data-sheet-grab]")) return;
+    drag.current = { y: e.touches[0].clientY, t: Date.now(), active: false };
+  };
+  const onTouchMove = (e) => {
+    const d = drag.current;
+    if (!d) return;
+    const dy = e.touches[0].clientY - d.y;
+    if (!d.active && dy > 8) d.active = true;
+    if (d.active) setDragY(Math.max(0, dy));
+  };
+  const onTouchEnd = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d?.active) return;
+    const fast = dragY > 40 && dragY / Math.max(1, Date.now() - d.t) > 0.6;
+    if ((dragY > 110 || fast) && requestClose()) return;
+    setDragY(0);
   };
 
   const handleMinimize = (draft) => {
@@ -70,9 +107,11 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete, o
     },
   }[phase];
 
-  const transition = phase === "open"
+  const dragging = !!drag.current?.active;
+  const transition = dragging ? "none" : phase === "open"
     ? "transform 0.42s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease"
     : "transform 0.35s cubic-bezier(0.4, 0, 1, 1), opacity 0.28s ease";
+  const sheetTransform = phase === "open" && dragY > 0 ? { transform: `translateY(${dragY}px)` } : null;
 
   return (
     <div
@@ -83,7 +122,7 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete, o
       {/* Backdrop — frosted glass */}
       <div
         className="absolute inset-0"
-        onClick={handleClose}
+        onClick={requestClose}
         style={{
           background: "rgba(15, 23, 42, 0.45)",
           backdropFilter: "blur(18px) saturate(180%)",
@@ -100,7 +139,9 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete, o
           transition,
           willChange: "transform, opacity",
           ...sheetStyle,
+          ...sheetTransform,
         }}
+        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}
       >
         {/* Drag handle indicator (iOS style) */}
         <div className="flex justify-center pt-2 pb-1 sm:hidden absolute top-0 left-0 right-0 z-10 pointer-events-none">
@@ -114,6 +155,7 @@ export default function TodoDetailModal({ todo, categories, onClose, onDelete, o
           onDelete={handleDelete}
           onMinimize={onMinimize ? handleMinimize : undefined}
           initialDraft={initialDraft}
+          closeRequestRef={closeRequestRef}
         />
       </div>
     </div>

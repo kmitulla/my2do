@@ -125,6 +125,10 @@ export default function useEditLock({ path, uid, name, initial = null, lazy = fa
       } else if (!lazy && !lockedByOther(liveRef.current)) {
         lastBeat = Date.now();
         tryAcquire();
+      } else if (lazy && stateRef.current === "other" && !lockedByOther(liveRef.current)) {
+        // fremde Sperre abgelaufen bzw. deren Fenster geschlossen – auch ohne
+        // neue Änderung am Dokument wieder freigeben
+        set("idle");
       }
     }, 5000);
 

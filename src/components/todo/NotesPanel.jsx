@@ -12,6 +12,7 @@ import {
 } from "@/lib/todoService";
 import { canOpenWindows, openInWindow } from "@/lib/desktop";
 import useEditLock from "@/hooks/useEditLock";
+import useBackClose from "@/hooks/useBackClose";
 import {
   AppWindow, Lock, ChevronRight, NotebookText, Folder, FileText, Plus, MoreHorizontal,
   Search, X, Maximize2, Minimize2, ArrowLeft, Pencil, Trash2, FolderInput, FilePlus2,
@@ -797,6 +798,9 @@ export default function NotesPanel({ fill = false }) {
   notebooksRef.current = notebooks;
 
   useEffect(() => subscribeNotebooks(uid, setNotebooks), [uid]);
+
+  // Handy: Zurück-Taste/-Geste schließt die geöffnete Seite (zurück zur Liste)
+  useBackClose(isMobile && !!selected, () => { setSelected(null); return true; });
 
   // Aufgeklappte Knoten (geräteübergreifend gespeichert)
   useEffect(() => {
